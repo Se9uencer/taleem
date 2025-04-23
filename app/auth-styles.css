@@ -1,0 +1,63 @@
+/* Auth pages light mode styles */
+.auth-page {
+  background-color: #f9fafb !important; /* bg-gray-50 */
+  color: #111827 !important; /* text-gray-900 */
+}
+
+.auth-page h1,
+.auth-page h2,
+.auth-page h3,
+.auth-page h4,
+.auth-page h5,
+.auth-page h6,
+.auth-page label {
+  color: #111827 !important; /* text-gray-900 */
+}
+
+.auth-page p,
+.auth-page span {
+  color: #374151 !important; /* text-gray-700 */
+}
+
+.auth-page .text-muted {
+  color: #6b7280 !important; /* text-gray-500 */
+}
+
+.auth-page .card {
+  background-color: white !important;
+  border-color: #e5e7eb !important; /* border-gray-200 */
+}
+
+.auth-page .btn-primary {
+  background-color: #8b5cf6 !important; /* bg-purple-600 */
+  color: white !important;
+}
+
+.auth-page .btn-primary:hover {
+  background-color: #7c3aed !important; /* bg-purple-700 */
+}
+
+.auth-page a {
+  color: #8b5cf6 !important; /* text-purple-600 */
+}
+
+.auth-page a:hover {
+  color: #7c3aed !important; /* text-purple-700 */
+}
+
+.auth-page input,
+.auth-page select {
+  background-color: white !important;
+  border-color: #d1d5db !important; /* border-gray-300 */
+  color: #111827 !important; /* text-gray-900 */
+}
+
+.auth-page input:focus,
+.auth-page select:focus {
+  border-color: #8b5cf6 !important; /* border-purple-500 */
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2) !important; /* ring-purple-500 */
+}
+
+.auth-page ::placeholder {
+  color: #9ca3af !important; /* placeholder-gray-400 */
+}
