@@ -22,9 +22,13 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
-  const [isUploading, setIsUploading] = useState(isUploading)
+  const [isUploading, setIsUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [debug, setDebug] = useState<string[]>([])
+  const [transcript, setTranscript] = useState<string | null>(null)
+  const [isTranscribing, setIsTranscribing] = useState(false)
+  const [transcriptionError, setTranscriptionError] = useState<string | null>(null)
+  const [recitationId, setRecitationId] = useState<string | null>(null)
 
   // Refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
@@ -94,6 +98,9 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
       setError(null)
       audioChunksRef.current = []
       addDebugLog("Starting recording...")
+      setTranscript(null)
+      setTranscriptionError(null)
+      setRecitationId(null)
 
       // Request microphone access
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -368,6 +375,114 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
   }
 
+  // Transcribe audio and save to database
+  const transcribeAudio = async () => {
+    if (!audioBlob) {
+      setTranscriptionError("No audio recording available to transcribe")
+      return
+    }
+
+    setIsTranscribing(true)
+    setTranscriptionError(null)
+    setTranscript(null)
+    addDebugLog("Starting transcription process")
+
+    try {
+      // Create form data
+      const formData = new FormData()
+      formData.append("file", audioBlob)
+
+      // Call the transcription API
+      const response = await fetch("https://taleem-ai-backend-production.up.railway.app/transcribe", {
+        method: "POST",
+        body: formData,
+      })
+
+      if (!response.ok) {
+        let errorMessage = "Failed to transcribe audio"
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.error || errorMessage
+        } catch (e) {
+          // If parsing JSON fails, use status text
+          errorMessage = `${errorMessage}: ${response.statusText}`
+        }
+        throw new Error(errorMessage)
+      }
+
+      const data = await response.json()
+      const transcriptionText = data.transcription
+      addDebugLog(`Transcription successful: ${transcriptionText}`)
+      setTranscript(transcriptionText)
+
+      // If we have a recitation ID, update it with the transcription
+      if (recitationId) {
+        await updateRecitationTranscription(recitationId, transcriptionText)
+      }
+    } catch (error: any) {
+      console.error("Transcription error:", error)
+      addDebugLog(`Transcription error: ${error.message}`)
+      setTranscriptionError(error.message || "Failed to transcribe audio")
+
+      // If we have a recitation ID, update it with the error
+      if (recitationId) {
+        await updateRecitationTranscriptionError(recitationId, error.message || "Failed to transcribe audio")
+      }
+    } finally {
+      setIsTranscribing(false)
+    }
+  }
+
+  // Update recitation with transcription
+  const updateRecitationTranscription = async (id: string, transcriptionText: string) => {
+    try {
+      const supabase = createClientComponentClient()
+      const { error } = await supabase
+        .from("recitations")
+        .update({
+          transcription: transcriptionText,
+          transcription_status: "completed",
+          transcription_date: new Date().toISOString(),
+        })
+        .eq("id", id)
+
+      if (error) {
+        addDebugLog(`Error updating transcription in database: ${error.message}`)
+        console.error("Error updating transcription:", error)
+      } else {
+        addDebugLog(`Successfully updated transcription in database for recitation ${id}`)
+      }
+    } catch (err: any) {
+      addDebugLog(`Exception updating transcription: ${err.message}`)
+      console.error("Exception updating transcription:", err)
+    }
+  }
+
+  // Update recitation with transcription error
+  const updateRecitationTranscriptionError = async (id: string, errorMessage: string) => {
+    try {
+      const supabase = createClientComponentClient()
+      const { error } = await supabase
+        .from("recitations")
+        .update({
+          transcription_status: "error",
+          transcription_error: errorMessage,
+          transcription_date: new Date().toISOString(),
+        })
+        .eq("id", id)
+
+      if (error) {
+        addDebugLog(`Error updating transcription error in database: ${error.message}`)
+        console.error("Error updating transcription error:", error)
+      } else {
+        addDebugLog(`Successfully updated transcription error in database for recitation ${id}`)
+      }
+    } catch (err: any) {
+      addDebugLog(`Exception updating transcription error: ${err.message}`)
+      console.error("Exception updating transcription error:", err)
+    }
+  }
+
   // Submit recording
   const handleSubmit = async () => {
     if (!audioBlob) {
@@ -472,7 +587,7 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
         // Continue despite this error
       }
 
-      // Create recitation record
+      // Create recitation record with transcription data if available
       addDebugLog("Creating recitation record in database")
       const { data: recitationData, error: recitationError } = await supabase
         .from("recitations")
@@ -483,6 +598,10 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
           submitted_at: new Date().toISOString(),
           is_latest: true,
           processing_status: "pending",
+          transcription: transcript || null,
+          transcription_status: transcript ? "completed" : "pending",
+          transcription_date: transcript ? new Date().toISOString() : null,
+          transcription_error: transcriptionError || null,
         })
         .select()
         .single()
@@ -491,6 +610,8 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
         throw new Error(`Failed to save recitation: ${recitationError.message}`)
       }
 
+      // Store the recitation ID for later use
+      setRecitationId(recitationData.id)
       addDebugLog(`Recitation record created with ID: ${recitationData.id}`)
 
       // Trigger speech recognition processing
@@ -590,6 +711,38 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
                 </div>
               </div>
 
+              {/* Transcription section */}
+              <div className="w-full">
+                {!transcript && !transcriptionError && !isTranscribing && (
+                  <Button onClick={transcribeAudio} variant="outline" className="w-full" disabled={isTranscribing}>
+                    Transcribe Recitation
+                  </Button>
+                )}
+
+                {isTranscribing && (
+                  <div className="flex items-center justify-center p-4 border border-gray-200 dark:border-gray-700 rounded-md">
+                    <div className="animate-spin mr-2 h-4 w-4 border-2 border-purple-600 border-t-transparent rounded-full"></div>
+                    <span>Transcribing...</span>
+                  </div>
+                )}
+
+                {transcriptionError && (
+                  <div className="p-4 border border-red-200 bg-red-50 dark:bg-red-900/10 dark:border-red-800 rounded-md text-red-600 dark:text-red-400 text-sm">
+                    <p className="font-medium">Transcription Error</p>
+                    <p>{transcriptionError}</p>
+                  </div>
+                )}
+
+                {transcript && (
+                  <div className="p-4 border border-purple-200 dark:border-purple-800 rounded-md bg-purple-50 dark:bg-purple-900/10">
+                    <h4 className="text-sm font-medium mb-2 text-purple-700 dark:text-purple-400">Transcription</h4>
+                    <p className="text-right font-arabic text-lg" dir="rtl">
+                      {transcript}
+                    </p>
+                  </div>
+                )}
+              </div>
+
               <div className="flex flex-col sm:flex-row gap-2 justify-center">
                 <Button
                   onClick={() => {
@@ -597,6 +750,9 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
                     setAudioBlob(null)
                     setRecordingDuration(0)
                     setError(null)
+                    setTranscript(null)
+                    setTranscriptionError(null)
+                    setRecitationId(null)
                   }}
                   variant="outline"
                 >

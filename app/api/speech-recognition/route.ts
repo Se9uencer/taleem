@@ -3,7 +3,7 @@ import { createServerClient } from "@/lib/supabase/server"
 
 export async function POST(request: Request) {
   try {
-    const supabase = createServerClient()
+    const supabase = await createServerClient()
     const { recitationId } = await request.json()
 
     try {
@@ -31,8 +31,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Recitation not found" }, { status: 404 })
     }
 
-    // Update processing status
-    await supabase.from("recitations").update({ processing_status: "processing" }).eq("id", recitationId)
+    // REMOVED: Update processing status since the column doesn't exist
+    // await supabase.from("recitations").update({ processing_status: "processing" }).eq("id", recitationId)
 
     // In a real implementation, we would:
     // 1. Download the audio file from Supabase Storage
@@ -64,8 +64,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Failed to save feedback" }, { status: 500 })
     }
 
-    // Update processing status to completed
-    await supabase.from("recitations").update({ processing_status: "completed" }).eq("id", recitationId)
+    // REMOVED: Update processing status since the column doesn't exist
+    // await supabase.from("recitations").update({ processing_status: "completed" }).eq("id", recitationId)
 
     return NextResponse.json({ success: true, feedback })
   } catch (error) {

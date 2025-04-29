@@ -296,34 +296,42 @@ export default function SubmissionsList({
     setEditingFeedback(null)
   }
 
+  // Replace the handlePlayAudio function with this improved version
   const handlePlayAudio = (submissionId: string) => {
-    if (playingAudio === submissionId) {
-      // Pause the currently playing audio
-      const audioElement = document.getElementById(`audio-${submissionId}`) as HTMLAudioElement
-      if (audioElement) {
-        audioElement.pause()
-      }
-      setPlayingAudio(null)
-    } else {
-      // Pause any currently playing audio
-      if (playingAudio) {
-        const currentAudio = document.getElementById(`audio-${playingAudio}`) as HTMLAudioElement
-        if (currentAudio) {
-          currentAudio.pause()
+    try {
+      if (playingAudio === submissionId) {
+        // Pause the currently playing audio
+        const audioElement = document.getElementById(`audio-${submissionId}`) as HTMLAudioElement
+        if (audioElement) {
+          audioElement.pause()
+        }
+        setPlayingAudio(null)
+      } else {
+        // Pause any currently playing audio
+        if (playingAudio) {
+          const currentAudio = document.getElementById(`audio-${playingAudio}`) as HTMLAudioElement
+          if (currentAudio) {
+            currentAudio.pause()
+          }
+        }
+
+        // Instead of programmatically playing, show the audio element and let user interact with it
+        const audioElement = document.getElementById(`audio-${submissionId}`) as HTMLAudioElement
+        if (audioElement) {
+          // Make audio element visible
+          audioElement.classList.remove("hidden")
+          audioElement.classList.add("block")
+          setPlayingAudio(submissionId)
         }
       }
-
-      // Play the new audio
+    } catch (err) {
+      console.error("Error controlling audio playback:", err)
+      // If there's an error, just show the audio element
       const audioElement = document.getElementById(`audio-${submissionId}`) as HTMLAudioElement
       if (audioElement) {
-        audioElement.play()
-
-        // Set up event listener to update state when audio ends
-        audioElement.onended = () => {
-          setPlayingAudio(null)
-        }
+        audioElement.classList.remove("hidden")
+        audioElement.classList.add("block")
       }
-      setPlayingAudio(submissionId)
     }
   }
 
@@ -432,27 +440,34 @@ export default function SubmissionsList({
                     </button>
                   )}
                 </div>
-                <div className="flex items-center bg-gray-100 p-3 rounded-md">
-                  <button
-                    onClick={() => handlePlayAudio(student.latest_submission.id)}
-                    className="mr-3 p-2 bg-purple-600 text-white rounded-full hover:bg-purple-700 focus:outline-none"
-                    aria-label={playingAudio === student.latest_submission.id ? "Pause audio" : "Play audio"}
-                  >
-                    {playingAudio === student.latest_submission.id ? (
-                      <PauseIcon className="h-4 w-4" />
-                    ) : (
-                      <PlayIcon className="h-4 w-4" />
-                    )}
-                  </button>
+                {/* Update the audio elements in the latest submission section */}
+                <div className="flex flex-col space-y-2 bg-gray-100 p-3 rounded-md">
+                  <div className="flex items-center">
+                    <button
+                      onClick={() => handlePlayAudio(student.latest_submission.id)}
+                      className="mr-3 p-2 bg-purple-600 text-white rounded-full hover:bg-purple-700 focus:outline-none"
+                      aria-label="Toggle audio player"
+                    >
+                      {playingAudio === student.latest_submission.id ? (
+                        <PauseIcon className="h-4 w-4" />
+                      ) : (
+                        <PlayIcon className="h-4 w-4" />
+                      )}
+                    </button>
+                    <span className="text-sm text-gray-600">
+                      {playingAudio === student.latest_submission.id
+                        ? "Audio player shown below"
+                        : "Click to show audio player"}
+                    </span>
+                  </div>
                   <audio
                     id={`audio-${student.latest_submission.id}`}
                     src={student.latest_submission.audio_url}
-                    className="hidden"
+                    className={`w-full ${playingAudio === student.latest_submission.id ? "block" : "hidden"}`}
+                    controls
                     onEnded={() => setPlayingAudio(null)}
+                    onError={(e) => console.error("Audio error:", e)}
                   />
-                  <span className="text-sm text-gray-600">
-                    {playingAudio === student.latest_submission.id ? "Playing..." : "Click to play recording"}
-                  </span>
                 </div>
               </div>
 
@@ -475,27 +490,34 @@ export default function SubmissionsList({
                               {isSubmissionLate(submission.submitted_at) ? "Late" : "On time"}
                             </span>
                           </div>
-                          <div className="flex items-center">
-                            <button
-                              onClick={() => handlePlayAudio(submission.id)}
-                              className="mr-3 p-2 bg-gray-300 text-gray-700 rounded-full hover:bg-gray-400 focus:outline-none"
-                              aria-label={playingAudio === submission.id ? "Pause audio" : "Play audio"}
-                            >
-                              {playingAudio === submission.id ? (
-                                <PauseIcon className="h-3 w-3" />
-                              ) : (
-                                <PlayIcon className="h-3 w-3" />
-                              )}
-                            </button>
+                          {/* Update the audio elements in the submission history section */}
+                          <div className="flex flex-col space-y-2">
+                            <div className="flex items-center">
+                              <button
+                                onClick={() => handlePlayAudio(submission.id)}
+                                className="mr-3 p-2 bg-gray-300 text-gray-700 rounded-full hover:bg-gray-400 focus:outline-none"
+                                aria-label="Toggle audio player"
+                              >
+                                {playingAudio === submission.id ? (
+                                  <PauseIcon className="h-3 w-3" />
+                                ) : (
+                                  <PlayIcon className="h-3 w-3" />
+                                )}
+                              </button>
+                              <span className="text-xs text-gray-600">
+                                {playingAudio === submission.id
+                                  ? "Audio player shown below"
+                                  : "Click to show audio player"}
+                              </span>
+                            </div>
                             <audio
                               id={`audio-${submission.id}`}
                               src={submission.audio_url}
-                              className="hidden"
+                              className={`w-full ${playingAudio === submission.id ? "block" : "hidden"}`}
+                              controls
                               onEnded={() => setPlayingAudio(null)}
+                              onError={(e) => console.error("Audio error:", e)}
                             />
-                            <span className="text-xs text-gray-600">
-                              {playingAudio === submission.id ? "Playing..." : "Previous version"}
-                            </span>
                           </div>
                           {submission.feedback && (
                             <div className="mt-2 pt-2 border-t border-gray-200">

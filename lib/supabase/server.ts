@@ -4,7 +4,8 @@ import { createClient } from "@supabase/supabase-js"
 import { cookies } from "next/headers"
 import { supabaseConfig } from "../config"
 
-export const createServerClient = () => {
+// Change to async function to comply with Server Actions requirements
+export const createServerClient = async () => {
   try {
     const cookieStore = cookies()
 
@@ -22,6 +23,12 @@ export const createServerClient = () => {
       cookies: {
         get(name: string) {
           return cookieStore.get(name)?.value
+        },
+        set() {
+          // This is a read-only cookie in a server component
+        },
+        remove() {
+          // This is a read-only cookie in a server component
         },
       },
     })
