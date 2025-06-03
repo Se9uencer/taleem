@@ -1,16 +1,10 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { Inter } from "next/font/google"
 import "./globals.css"
 import { SettingsProvider } from "@/contexts/settings-context"
 import Script from "next/script"
 import { Toaster } from "@/components/ui/toaster"
 
-const inter = Inter({
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
-  display: "swap",
-})
 
 export const metadata: Metadata = {
   title: "Taleem - Islamic Learning Platform",
@@ -66,7 +60,7 @@ export default function RootLayout({
         `}
         </Script>
       </head>
-      <body className={inter.className}>
+      <body>
         <SettingsProvider>{children}</SettingsProvider>
         <Toaster />
       </body>
