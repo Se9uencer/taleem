@@ -5,7 +5,7 @@ import { createClientComponentClient } from "@/lib/supabase/client"
 import AuthenticatedLayout from "@/components/authenticated-layout"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatDatePST } from "@/lib/date-utils"
-import { BookOpen, Calendar, CheckCircle, School, User, Users } from "lucide-react"
+import { BookOpen, Calendar, CheckCircle, School, User, Users, XCircle } from "lucide-react"
 import Link from "next/link"
 
 export default function DashboardPage() {
@@ -16,6 +16,8 @@ export default function DashboardPage() {
   const [recitations, setRecitations] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [lateSubmissions, setLateSubmissions] = useState<any[]>([])
+  const [showLateAlert, setShowLateAlert] = useState(true)
 
   useEffect(() => {
     const loadData = async () => {
@@ -114,6 +116,28 @@ export default function DashboardPage() {
         }))
 
         setAssignments(formattedAssignments)
+        // Fetch latest recitations for all assignments
+        const assignmentIds = formattedAssignments.map((a: any) => a.id)
+        if (assignmentIds.length > 0) {
+          const { data: recitationsData } = await supabase
+            .from("recitations")
+            .select("id, assignment_id, student_id, submitted_at, is_latest, assignments(id, title, due_date), profiles(id, first_name, last_name)")
+            .in("assignment_id", assignmentIds)
+            .eq("is_latest", true)
+          // Find late submissions
+          const late = (recitationsData || []).filter((rec: any) => {
+            const due = new Date(rec.assignments?.due_date)
+            const submitted = new Date(rec.submitted_at)
+            return submitted > due
+          }).map((rec: any) => ({
+            id: rec.id,
+            student: rec.profiles ? `${rec.profiles.first_name} ${rec.profiles.last_name}` : rec.student_id,
+            assignment: rec.assignments?.title || rec.assignment_id,
+            submitted_at: rec.submitted_at,
+            due_date: rec.assignments?.due_date,
+          }))
+          setLateSubmissions(late)
+        }
       } else {
         setAssignments([])
       }
@@ -250,6 +274,27 @@ export default function DashboardPage() {
   return (
     <AuthenticatedLayout>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Late Submissions Alert */}
+        {profile?.role === "teacher" && showLateAlert && lateSubmissions.length > 0 && (
+          <div className="bg-yellow-100 border border-yellow-300 text-yellow-900 rounded p-4 mb-6 relative">
+            <button
+              className="absolute top-2 right-2 text-yellow-700 hover:text-yellow-900"
+              onClick={() => setShowLateAlert(false)}
+              aria-label="Dismiss late submissions alert"
+            >
+              <XCircle className="h-5 w-5" />
+            </button>
+            <strong>Late Submissions:</strong>
+            <ul className="mt-2 space-y-1">
+              {lateSubmissions.map((rec) => (
+                <li key={rec.id}>
+                  <span className="font-semibold">{rec.student}</span> submitted <span className="font-semibold">{rec.assignment}</span> late (submitted {formatDatePST(rec.submitted_at)}; due {formatDatePST(rec.due_date)})
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* Welcome Section */}
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">

@@ -9,10 +9,11 @@ import { AlertCircle } from "lucide-react"
 interface RecorderProps {
   assignmentId: string
   studentId: string
+  dueDate?: string
   onRecitationSubmitted: (recitationId: string) => void
 }
 
-export default function Recorder({ assignmentId, studentId, onRecitationSubmitted }: RecorderProps) {
+export default function Recorder({ assignmentId, studentId, dueDate, onRecitationSubmitted }: RecorderProps) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const [isRecording, setIsRecording] = useState(false)
   const [audioUrl, setAudioUrl] = useState("")
@@ -64,16 +65,20 @@ export default function Recorder({ assignmentId, studentId, onRecitationSubmitte
       }
 
       mediaRecorder.ondataavailable = (event) => {
+        addDebugInfo(`ondataavailable: event.data.size = ${event.data.size}`)
         if (event.data.size > 0) {
           chunksRef.current.push(event.data)
         }
       }
 
       mediaRecorder.onstop = () => {
+        addDebugInfo(`onstop: chunksRef.current.length = ${chunksRef.current.length}`)
         const blob = new Blob(chunksRef.current, { type: mediaRecorder.mimeType || "audio/webm" })
+        addDebugInfo(`onstop: blob.size = ${blob.size}`)
 
         if (blob.size === 0) {
-          setError("Recording failed: empty audio.")
+          setError("Recording failed: empty audio. (No audio data was captured. Try a different browser or check your mic permissions.)")
+          addDebugInfo("Recording failed: empty audio blob.")
           return
         }
 
@@ -84,6 +89,7 @@ export default function Recorder({ assignmentId, studentId, onRecitationSubmitte
         const audio = new Audio(url)
         audio.onloadedmetadata = () => {
           setDuration(audio.duration)
+          addDebugInfo(`audio.onloadedmetadata: duration = ${audio.duration}`)
         }
       }
 
@@ -147,6 +153,17 @@ export default function Recorder({ assignmentId, studentId, onRecitationSubmitte
     setIsUploading(true)
     setError("")
     addDebugInfo("Starting submission process...")
+
+    // Check if late (for logging/alerting, not blocking)
+    let isLate = false
+    if (dueDate) {
+      const now = new Date()
+      const due = new Date(dueDate)
+      isLate = now > due
+      if (isLate) {
+        addDebugInfo("This submission is LATE.")
+      }
+    }
 
     try {
       const supabase = createClientComponentClient()

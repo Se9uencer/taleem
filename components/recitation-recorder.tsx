@@ -148,8 +148,8 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
         setError(`Recording error: ${event.error || "Unknown error"}`)
       }
 
-      // Start recording - request data every 1000ms (1 second)
-      recorder.start(1000)
+      // Start recording - request data every 250ms (more frequent updates)
+      recorder.start(250)
       addDebugLog("MediaRecorder started")
       setIsRecording(true)
 

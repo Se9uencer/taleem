@@ -74,17 +74,6 @@ export default function NewRecitationPage() {
           return
         }
 
-        // Check if assignment is past due in PST
-        const dueDate = new Date(assignmentData.due_date)
-        const nowPST = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" }))
-        const dueDatePST = new Date(dueDate.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }))
-
-        if (dueDatePST < nowPST) {
-          setError("This assignment is past due and cannot be submitted")
-          setLoading(false)
-          return
-        }
-
         // Check if student is enrolled in the class
         const { data: enrollment, error: enrollmentError } = await supabase
           .from("class_students")
@@ -247,11 +236,19 @@ export default function NewRecitationPage() {
             {submittedRecitationId ? (
               <RecitationFeedback recitationId={submittedRecitationId} />
             ) : (
-              <Recorder
-                assignmentId={assignmentId!}
-                studentId={user.id}
-                onRecitationSubmitted={handleRecitationSubmitted}
-              />
+              <>
+                {assignment && new Date() > new Date(assignment.due_date) && (
+                  <div className="bg-yellow-100 text-yellow-800 p-3 rounded mb-4 text-center">
+                    <strong>Warning:</strong> This assignment is overdue. Your submission will be marked as late.
+                  </div>
+                )}
+                <Recorder
+                  assignmentId={assignmentId!}
+                  studentId={user.id}
+                  dueDate={assignment?.due_date}
+                  onRecitationSubmitted={handleRecitationSubmitted}
+                />
+              </>
             )}
 
             {submittedRecitationId && (
