@@ -19,8 +19,8 @@ interface RecitationRecorderProps {
 
 export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmitted, assignmentDueDate }: RecitationRecorderProps) {
   const [isRecording, setIsRecording] = useState(false)
-  const [recordingDuration, setRecordingDuration] = useState(0) // This is for UI display, updated by timer
-  const [processedAudioDuration, setProcessedAudioDuration] = useState<number | null>(null); // Stores duration from metadata
+  const [recordingDuration, setRecordingDuration] = useState(0); // UI timer, increments every second
+  const [processedAudioDuration, setProcessedAudioDuration] = useState<number | null>(null); // Accurate duration from metadata
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -55,7 +55,7 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => {
         track.stop()
-        addDebugLog(`Stopped track: ${track.kind}`)
+        // addDebugLog(`Stopped track: ${track.kind}`) // Can be noisy
       })
       streamRef.current = null
     }
@@ -65,7 +65,7 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
     if (timerRef.current) {
       clearInterval(timerRef.current)
       timerRef.current = null
-      addDebugLog("Timer interval cleared")
+      // addDebugLog("Timer interval cleared") // Can be noisy
     }
   }
 
@@ -73,79 +73,101 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
     if (audioUrl) {
       URL.revokeObjectURL(audioUrl)
       setAudioUrl(null)
-      addDebugLog("Audio URL released")
+      addDebugLog("Previous audio URL released")
     }
   }
 
   const resetRecordingStates = () => { 
+    addDebugLog("Resetting recording states...")
     stopMediaTracks()
     clearTimerInterval()
     releaseAudioUrl()
     setAudioBlob(null)
     setRecordingDuration(0)
-    setProcessedAudioDuration(null); // Reset processed duration
-    setError(null)
+    setProcessedAudioDuration(null); 
+    setError(null) // Clear previous errors
     setTranscript(null);
     setTranscriptionError(null);
     setIsPlaying(false);
     if (audioRef.current) {
+        audioRef.current.src = ""; // Clear src
+        audioRef.current.load(); // Attempt to reset audio element state
         audioRef.current.currentTime = 0;
     }
-    addDebugLog("Recording state reset")
+    audioChunksRef.current = []; // Ensure chunks are cleared
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        addDebugLog(`MediaRecorder was in state ${mediaRecorderRef.current.state}, attempting to stop during reset.`);
+        mediaRecorderRef.current.stop(); // Attempt to stop if it was somehow active
+    }
+    mediaRecorderRef.current = null;
+    setIsRecording(false); // Ensure recording flag is false
+    setIsUploading(false); // Ensure uploading flag is false
   }
 
   const startRecording = async () => {
+    resetRecordingStates(); // Call reset at the very beginning
     try {
-      resetRecordingStates()
-      audioChunksRef.current = []
-      addDebugLog("Starting recording...")
+      addDebugLog("Attempting to start recording...")
       
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       streamRef.current = stream
-      addDebugLog(`Got media stream with ${stream.getAudioTracks().length} audio tracks`)
+      addDebugLog(`Media stream acquired. Tracks: ${stream.getAudioTracks().length}`)
       
       let recorder: MediaRecorder | null = null;
-      const mimeTypesToTry = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
+      const mimeTypesToTry = [
+        "audio/webm;codecs=opus", 
+        "audio/webm", 
+        "audio/ogg;codecs=opus", 
+        "audio/mp4", // Some browsers might support this for MediaRecorder
+      ];
       for (const mimeType of mimeTypesToTry) {
         if (MediaRecorder.isTypeSupported(mimeType)) {
           try {
             recorder = new MediaRecorder(stream, { mimeType });
-            addDebugLog(`Created MediaRecorder with ${mimeType}`);
+            addDebugLog(`Successfully created MediaRecorder with MIME type: ${mimeType}`);
             break;
           } catch (e) {
-            addDebugLog(`Failed to create MediaRecorder with ${mimeType}: ${e}`);
+            addDebugLog(`Failed to create MediaRecorder with ${mimeType}: ${e instanceof Error ? e.message : String(e)}`);
           }
+        } else {
+            addDebugLog(`MIME type not supported: ${mimeType}`);
         }
       }
       if (!recorder) {
-         recorder = new MediaRecorder(stream);
-         addDebugLog(`Created MediaRecorder with default settings: ${recorder.mimeType}`);
+         // Fallback to default if no preferred types work
+         try {
+            recorder = new MediaRecorder(stream);
+            addDebugLog(`Created MediaRecorder with browser default settings. MIME type: ${recorder.mimeType}`);
+         } catch (e) {
+            addDebugLog(`Failed to create MediaRecorder even with default settings: ${e instanceof Error ? e.message : String(e)}`);
+            throw new Error("MediaRecorder could not be initialized.");
+         }
       }
       mediaRecorderRef.current = recorder
 
       recorder.ondataavailable = (event) => {
         if (event.data && event.data.size > 0) {
-          addDebugLog(`Received chunk: ${event.data.size} bytes, type: ${event.data.type}`)
+          // addDebugLog(`Received chunk: ${event.data.size} bytes, type: ${event.data.type}`) // Can be very noisy
           audioChunksRef.current.push(event.data)
-        } else {
-          addDebugLog("Received empty data event")
         }
       }
 
       recorder.onstop = () => {
-        addDebugLog(`Recording stopped. UI Duration: ${recordingDuration}s. Processing ${audioChunksRef.current.length} chunks`)
+        addDebugLog(`MediaRecorder.onstop triggered. UI Duration was ~${recordingDuration}s. Processing ${audioChunksRef.current.length} chunks.`)
         processRecording()
       }
-      recorder.onerror = (event: any) => {
-        const err = (event as MediaRecorderErrorEvent).error;
-        addDebugLog(`MediaRecorder error: ${err?.name} - ${err?.message}`)
-        setError(`Recording error: ${err?.name} - ${err?.message || "Unknown error"}`)
+      recorder.onerror = (event: Event) => { // Generic Event, cast to MediaRecorderErrorEvent
+        const mediaErrorEvent = event as MediaRecorderErrorEvent;
+        const err = mediaErrorEvent.error;
+        addDebugLog(`MediaRecorder error event: ${err?.name} - ${err?.message}`)
+        setError(`Recording system error: ${err?.name} - ${err?.message || "Unknown recording error"}`)
+        resetRecordingStates(); // Reset on critical recorder error
       }
       
-      recorder.start(250); 
+      recorder.start(250); // Collect data every 250ms
       
-      addDebugLog("MediaRecorder started with 250ms timeslice")
-      setIsRecording(true)
+      addDebugLog(`MediaRecorder started successfully (state: ${recorder.state}) with 250ms timeslice`)
+      setIsRecording(true) // This should trigger UI change to "Stop Recording"
 
       setRecordingDuration(0); 
       timerRef.current = setInterval(() => {
@@ -153,7 +175,9 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
           const newDuration = prev + 1
           if (newDuration >= 180) {
             addDebugLog("Max recording time reached (180s), stopping")
-            stopRecording()
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+                stopRecording(); // Ensure stopRecording is called
+            }
             return 180
           }
           return newDuration
@@ -163,140 +187,174 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
     } catch (err: any) {
       console.error("Error starting recording:", err)
       addDebugLog(`Error starting recording: ${err.message}`)
-      setError(`Could not start recording: ${err.message}. Please ensure microphone access is allowed.`)
+      setError(`Could not start recording: ${err.message}. Please ensure microphone access is allowed and try again.`)
       resetRecordingStates()
     }
   }
 
   const stopRecording = () => {
-    addDebugLog("Attempting to stop recording...")
+    addDebugLog("Stop button clicked or max time reached. Attempting to stop recording...");
     setIsRecording(false); 
     clearTimerInterval(); 
     
     if (mediaRecorderRef.current) {
       const state = mediaRecorderRef.current.state;
-      addDebugLog(`MediaRecorder state before stopping: ${state}`);
+      addDebugLog(`MediaRecorder state before explicit stop: ${state}`);
       if (state === "recording" || state === "paused") {
         try {
+          // ondataavailable is implicitly called one last time before onstop by mediaRecorder.stop()
           mediaRecorderRef.current.stop(); 
-          addDebugLog("MediaRecorder.stop() called");
+          addDebugLog("MediaRecorder.stop() successfully called. Waiting for onstop event.");
         } catch (err: any) {
           addDebugLog(`Error calling MediaRecorder.stop(): ${err.message}`);
           setError(`Error stopping recording: ${err.message}`);
+          // If stop fails, try to process what we have and then stop tracks
           if (audioChunksRef.current.length > 0) {
+            addDebugLog("Forcing processing of existing chunks due to stop() error.");
             processRecording();
           }
+          stopMediaTracks(); 
         }
       } else {
-        addDebugLog(`MediaRecorder not in 'recording' or 'paused' state (current state: ${state}). Processing existing chunks if any.`);
+        addDebugLog(`MediaRecorder was not in 'recording' or 'paused' state (current state: ${state}). Will process existing chunks if any.`);
         if (audioChunksRef.current.length > 0) {
           processRecording(); 
         } else {
-            stopMediaTracks(); // If no chunks and not recording, just stop tracks
+          addDebugLog("No chunks to process, and recorder was not active.");
+          stopMediaTracks();
         }
       }
     } else {
-      addDebugLog("MediaRecorder ref is null, cannot stop.");
-      stopMediaTracks();
+      addDebugLog("MediaRecorder ref is null. No active recording to stop.");
+      stopMediaTracks(); // Ensure cleanup if ref is null
     }
   }
 
   const processRecording = () => {
-    addDebugLog(`Processing recording with ${audioChunksRef.current.length} chunks. UI duration was ~${recordingDuration}s.`);
+    addDebugLog(`Processing audio. Number of chunks: ${audioChunksRef.current.length}. Blob type from recorder: ${mediaRecorderRef.current?.mimeType}`);
+    
     if (audioChunksRef.current.length === 0) {
-        addDebugLog("No audio chunks to process.");
+        addDebugLog("No audio chunks were collected during recording.");
         setError("No audio data was recorded. Please try again.");
         resetRecordingStates(); 
         return;
     }
 
     try {
-      const mimeType = mediaRecorderRef.current?.mimeType || audioChunksRef.current[0]?.type || "audio/webm"
-      addDebugLog(`Using MIME type for blob: ${mimeType}`)
-      const blob = new Blob(audioChunksRef.current, { type: mimeType })
-      addDebugLog(`Created blob: ${blob.size} bytes, type: ${blob.type}`)
+      const mimeType = mediaRecorderRef.current?.mimeType || audioChunksRef.current[0]?.type || "audio/webm";
+      addDebugLog(`Using MIME type for blob: ${mimeType}`);
+      const blob = new Blob(audioChunksRef.current, { type: mimeType });
+      addDebugLog(`Blob created successfully. Size: ${blob.size} bytes, Type: ${blob.type}`);
       
       if (blob.size === 0) {
-        setError("Created audio blob is empty. Please try recording again.")
+        setError("Recording resulted in an empty audio file. Please try again.");
         resetRecordingStates();
-        return
+        return;
       }
 
-      const url = URL.createObjectURL(blob)
-      addDebugLog(`Created URL for blob: ${url}`)
+      // Revoke old URL if it exists
+      if (audioUrl) {
+        URL.revokeObjectURL(audioUrl);
+        addDebugLog("Revoked old object URL");
+      }
       
-      const audio = new Audio(url)
-      addDebugLog("Created audio element for duration check")
+      const newAudioUrl = URL.createObjectURL(blob);
+      addDebugLog(`New Object URL created: ${newAudioUrl}`);
+      setAudioUrl(newAudioUrl); // Set URL for the <audio> element
+      
+      const audio = new Audio(newAudioUrl);
+      addDebugLog("HTMLAudioElement created for metadata.")
       
       audio.onloadedmetadata = () => {
         const durationFromMetadata = audio.duration;
-        addDebugLog(`Audio metadata loaded, durationFromMetadata: ${durationFromMetadata} seconds`);
+        addDebugLog(`onloadedmetadata: audio.duration = ${durationFromMetadata}`);
 
-        if (!durationFromMetadata || isNaN(durationFromMetadata) || durationFromMetadata === Infinity || durationFromMetadata < 0.5) {
-          addDebugLog(`Audio duration invalid or too short: ${durationFromMetadata}s. Minimum 0.5s required.`);
+        if (durationFromMetadata && !isNaN(durationFromMetadata) && durationFromMetadata !== Infinity && durationFromMetadata >= 0.5) {
+          setAudioBlob(blob); // Set blob only if duration is valid
+          setProcessedAudioDuration(durationFromMetadata);
+          setError(null); 
+          addDebugLog(`Audio processed successfully. Accurate duration: ${durationFromMetadata}s`);
+        } else {
+          addDebugLog(`Invalid duration from metadata: ${durationFromMetadata}. Minimum 0.5s required.`);
           setError("Recording is too short, duration is invalid, or couldn't be processed (min 0.5s). Please try again.");
-          URL.revokeObjectURL(url);
-          resetRecordingStates();
-          setAudioBlob(null); 
+          URL.revokeObjectURL(newAudioUrl); // Clean up new URL
           setAudioUrl(null);
+          setAudioBlob(null);
           setProcessedAudioDuration(null);
-          return;
         }
-        
-        setAudioBlob(blob);
-        setAudioUrl(url);
-        setProcessedAudioDuration(durationFromMetadata); // Store the accurate duration
-        setError(null); 
-        addDebugLog(`Audio processed successfully, accurate duration: ${durationFromMetadata}s`);
       };
       audio.onerror = (e) => {
-        const errorEvent = e.target as HTMLAudioElement;
-        const errorDetails = errorEvent.error ? `Code: ${errorEvent.error.code}, Message: ${errorEvent.error.message}` : "Unknown audio error";
-        addDebugLog(`Error loading audio metadata: ${errorDetails}`);
-        setError(`Failed to process recording metadata. The audio file may be corrupted or an unknown error occurred. Details: ${errorDetails}`);
-        URL.revokeObjectURL(url);
-        resetRecordingStates();
+        const errorTarget = e.target as HTMLAudioElement;
+        const errorDetails = errorTarget.error ? `Code: ${errorTarget.error.code}, Message: ${errorTarget.error.message}` : "Unknown audio element error";
+        addDebugLog(`HTMLAudioElement error during metadata load: ${errorDetails}`);
+        setError(`Failed to read audio metadata. File might be corrupted. Details: ${errorDetails}`);
+        URL.revokeObjectURL(newAudioUrl); // Clean up new URL
+        setAudioUrl(null);
+        setAudioBlob(null);
+        setProcessedAudioDuration(null);
       };
+
+      // Explicitly load to trigger metadata event for some browsers
+      audio.load(); 
+
     } catch (err: any) {
-      console.error("Error processing recording:", err);
-      addDebugLog(`Error processing recording: ${err.message}`);
+      console.error("Critical error in processRecording:", err);
+      addDebugLog(`Critical error in processRecording: ${err.message}`);
       setError(`Failed to process recording: ${err.message}`);
       resetRecordingStates();
+    } finally {
+        // Clean up stream tracks after processing is done or if it failed
+        stopMediaTracks();
+        // Clear chunks for the next recording
+        audioChunksRef.current = [];
     }
-    stopMediaTracks();
   }
 
   const togglePlayback = () => {
-    if (!audioRef.current || !audioUrl) return;
+    if (!audioRef.current || !audioUrl) {
+        addDebugLog("Cannot toggle playback: No audio element ref or URL.");
+        return;
+    }
     if (isPlaying) {
       audioRef.current.pause();
+      addDebugLog("Playback paused.");
     } else {
       audioRef.current.currentTime = 0; 
-      audioRef.current.play().catch((err) => {
+      audioRef.current.play().then(() => {
+        addDebugLog("Playback started.");
+      }).catch((err) => {
         console.error("Error playing audio:", err);
-        addDebugLog(`Error playing audio: ${err.message}`);
+        addDebugLog(`Error starting playback: ${err.message}`);
         setError(`Could not play audio: ${err.message}`);
       });
     }
+    // isPlaying state is managed by onPlay/onPause handlers of the audio element
   }
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    resetRecordingStates();
+    resetRecordingStates(); 
     const file = event.target.files?.[0];
-    if (!file) return;
+    if (!file) {
+        addDebugLog("No file selected for upload.");
+        return;
+    }
     addDebugLog(`File selected: ${file.name}, type: ${file.type}, size: ${file.size} bytes`);
     const validTypes = ["audio/wav", "audio/mpeg", "audio/mp3", "audio/ogg", "audio/webm", "audio/aac", "audio/mp4", "audio/x-m4a"];
     if (!validTypes.some((type) => file.type.startsWith(type.split("/")[0]))) {
       setError("Please upload a valid audio file (e.g., WAV, MP3, M4A, OGG, WebM)");
+      event.target.value = ""; // Reset file input
       return;
     }
-    if (file.size > 10 * 1024 * 1024) {
+    if (file.size > 10 * 1024 * 1024) { // 10MB
       setError("File size must be less than 10MB");
+      event.target.value = ""; 
       return;
     }
     
     const url = URL.createObjectURL(file);
-    addDebugLog(`Created URL for uploaded file: ${url}`);
+    addDebugLog(`Created Object URL for uploaded file: ${url}`);
+    setAudioUrl(url); // Set URL for the <audio> element
+    
     const audio = new Audio(url);
     audio.onloadedmetadata = () => {
       const duration = audio.duration;
@@ -304,27 +362,39 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
       if (!duration || isNaN(duration) || duration === Infinity || duration < 0.5) {
         setError("Uploaded audio file is too short (min 0.5s), duration is invalid, or couldn't be processed.");
         URL.revokeObjectURL(url);
+        setAudioUrl(null);
+        setAudioBlob(null);
+        setProcessedAudioDuration(null);
+        event.target.value = ""; 
         return;
       }
-      setAudioBlob(file);
-      setAudioUrl(url);
-      setProcessedAudioDuration(duration); // Store accurate duration
+      setAudioBlob(file); // Set blob for submission
+      setProcessedAudioDuration(duration);
       setError(null);
-      addDebugLog(`File processed successfully: ${url}`);
+      addDebugLog(`File processed successfully. Accurate duration: ${duration}s`);
     };
     audio.onerror = () => {
-      addDebugLog("Error loading uploaded file metadata");
-      setError("Failed to process uploaded audio file. It may be corrupted.");
+      addDebugLog("Error loading uploaded file metadata.");
+      setError("Failed to process uploaded audio file. It may be corrupted or an unsupported format.");
       URL.revokeObjectURL(url);
+      setAudioUrl(null);
+      setAudioBlob(null);
+      setProcessedAudioDuration(null);
+      event.target.value = ""; 
     };
   }
 
   const formatTime = (seconds: number | null) => {
-    if (seconds === null || isNaN(seconds)) return "00:00";
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.round(seconds % 60);
+    if (seconds === null || typeof seconds !== 'number' || isNaN(seconds)) return "00:00";
+    const totalSeconds = Math.max(0, seconds); // Ensure non-negative
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = Math.round(totalSeconds % 60);
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   }
+  
+  // Display recordingDuration (UI timer) when recording, otherwise processedAudioDuration
+  const displayDuration = isRecording ? recordingDuration : processedAudioDuration;
+
 
   const transcribeAudio = async () => {
     if (!audioBlob) {
@@ -578,11 +648,12 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
                 </Button>
                 <audio
                   ref={audioRef}
-                  src={audioUrl}
+                  src={audioUrl} // This URL is from createObjectURL
                   className="hidden" 
                   onEnded={() => setIsPlaying(false)}
                   onPlay={() => setIsPlaying(true)}
                   onPause={() => setIsPlaying(false)}
+                  // onError event added in processRecording and handleFileUpload
                 />
                 <div className="flex-1">
                   <p className="text-xs text-muted-foreground">
@@ -626,7 +697,7 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
                 >
                   Record/Upload Again
                 </Button>
-                <Button onClick={handleSubmit} disabled={isUploading || !audioBlob || (processedAudioDuration !== null && processedAudioDuration < 0.5)}>
+                <Button onClick={handleSubmit} disabled={isUploading || !audioBlob || (processedAudioDuration === null || processedAudioDuration < 0.5)}>
                   {isUploading ? "Submitting..." : "Submit Recitation"}
                 </Button>
               </div>
