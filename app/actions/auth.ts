@@ -3,28 +3,12 @@
 import { createServerClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 
-async function syncUserSettings(supabase, userId) {
-  try {
-    // Get user's theme preferences
-    const { data } = await supabase.from("profiles").select("theme, color_accent").eq("id", userId).single()
-
-    if (data) {
-      // Save to localStorage for immediate access on next page load
-      if (data.theme) {
-        localStorage.setItem("taleem-theme", data.theme)
-      }
-
-      if (data.color_accent) {
-        localStorage.setItem("taleem-color", data.color_accent)
-      }
-    }
-  } catch (error) {
-    console.error("Error syncing user settings:", error)
-  }
-}
+// The syncUserSettings function has been removed as it's redundant
+// and was causing an error by trying to use localStorage on the server.
+// Theme and color settings are handled by SettingsProvider on the client-side.
 
 export async function signIn(formData: FormData) {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
 
   const email = formData.get("email") as string
   const password = formData.get("password") as string
@@ -39,25 +23,31 @@ export async function signIn(formData: FormData) {
   }
 
   // Check if user has a profile
-  const { data: profile } = await supabase.from("profiles").select("*").eq("id", data.user.id).single()
+  // Ensure data.user exists before trying to access its properties
+  if (data && data.user) {
+    const { data: profile } = await supabase.from("profiles").select("*").eq("id", data.user.id).single()
 
-  if (!profile) {
-    // Create a profile if it doesn't exist
-    await supabase.from("profiles").insert({
-      id: data.user.id,
-      email: data.user.email,
-      role: "student", // Default role
-    })
+    if (!profile) {
+      // Create a profile if it doesn't exist
+      await supabase.from("profiles").insert({
+        id: data.user.id,
+        email: data.user.email, // Make sure email is available from data.user
+        role: "student", // Default role
+      })
+    }
+  } else {
+    // Handle case where data.user is null, though signInWithPassword error should catch this
+    return { error: "Login failed, user data not available." }
   }
 
-  // Sync user settings to localStorage
-  await syncUserSettings(supabase, data.user.id)
+  // The call to syncUserSettings has been removed.
+  // SettingsProvider will handle loading settings from Supabase on the client-side after redirect.
 
   redirect("/dashboard")
 }
 
 export async function signOut() {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   await supabase.auth.signOut()
   redirect("/login")
 }
