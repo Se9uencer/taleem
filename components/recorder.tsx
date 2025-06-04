@@ -300,6 +300,7 @@ export default function Recorder({ assignmentId, studentId, dueDate, onRecitatio
     } catch (err: any) {
       console.error("Error submitting recitation:", err)
       setError(err.message || "Failed to submit recitation")
+    } finally {
       setIsUploading(false)
     }
   }
