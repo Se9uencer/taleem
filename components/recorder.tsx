@@ -22,6 +22,7 @@ export default function Recorder({ assignmentId, studentId, dueDate, onRecitatio
   const [isUploading, setIsUploading] = useState(false)
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
   const [debugInfo, setDebugInfo] = useState<string[]>([])
+  const recordingStartRef = useRef<number | null>(null)
 
   const chunksRef = useRef<Blob[]>([])
 
@@ -87,13 +88,25 @@ export default function Recorder({ assignmentId, studentId, dueDate, onRecitatio
         setAudioBlob(blob)
 
         const audio = new Audio(url)
+        const fallbackDuration =
+          recordingStartRef.current !== null
+            ? (Date.now() - recordingStartRef.current) / 1000
+            : null
+
         audio.onloadedmetadata = () => {
-          setDuration(audio.duration)
-          addDebugInfo(`audio.onloadedmetadata: duration = ${audio.duration}`)
+          const metaDuration = audio.duration
+          const finalDuration = isNaN(metaDuration)
+            ? fallbackDuration || 0
+            : metaDuration
+          setDuration(finalDuration)
+          addDebugInfo(
+            `audio.onloadedmetadata: meta = ${metaDuration}, using = ${finalDuration}`
+          )
         }
       }
 
       mediaRecorder.start()
+      recordingStartRef.current = Date.now()
       mediaRecorderRef.current = mediaRecorder
       setIsRecording(true)
     } catch (err) {
@@ -107,6 +120,7 @@ export default function Recorder({ assignmentId, studentId, dueDate, onRecitatio
       mediaRecorderRef.current.stop()
       mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop())
       setIsRecording(false)
+      recordingStartRef.current = null
     }
   }
 
@@ -145,7 +159,7 @@ export default function Recorder({ assignmentId, studentId, dueDate, onRecitatio
   }
 
   const handleSubmit = async () => {
-    if (!audioBlob || !duration) {
+    if (!audioBlob || duration === null) {
       setError("Please record audio before submitting")
       return
     }
@@ -312,6 +326,7 @@ export default function Recorder({ assignmentId, studentId, dueDate, onRecitatio
     setAudioUrl("")
     setAudioBlob(null)
     setDuration(null)
+    recordingStartRef.current = null
     setError("")
   }
 
@@ -347,7 +362,7 @@ export default function Recorder({ assignmentId, studentId, dueDate, onRecitatio
             {audioUrl && (
               <div className="space-y-4">
                 <audio controls src={audioUrl} className="w-full" />
-                {duration && (
+                {duration !== null && (
                   <p className="text-sm text-center text-muted-foreground">Duration: {duration.toFixed(2)} seconds</p>
                 )}
 
@@ -355,7 +370,7 @@ export default function Recorder({ assignmentId, studentId, dueDate, onRecitatio
                   <Button onClick={resetRecording} variant="outline">
                     Record Again
                   </Button>
-                  <Button onClick={handleSubmit} disabled={isUploading || !duration}>
+                  <Button onClick={handleSubmit} disabled={isUploading || duration === null}>
                     {isUploading ? "Submitting..." : "Submit Recitation"}
                   </Button>
                 </div>
