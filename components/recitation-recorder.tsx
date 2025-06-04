@@ -3,12 +3,12 @@
 
 import type React from "react"
 import { useState, useRef, useEffect } from "react"
-import { Button } from "@/components/ui/button" //
-import { Card, CardContent } from "@/components/ui/card" //
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
 import { Mic, Square, Play, Pause, Upload, AlertCircle } from "lucide-react"
-import { createClientComponentClient } from "@/lib/supabase/client" //
-import { toast } from "@/components/ui/use-toast" //
-import { isPastDuePST } from "@/lib/date-utils" //
+import { createClientComponentClient } from "@/lib/supabase/client"
+import { toast } from "@/components/ui/use-toast"
+import { isPastDuePST } from "@/lib/date-utils"
 
 interface RecitationRecorderProps {
   assignmentId: string
@@ -19,7 +19,8 @@ interface RecitationRecorderProps {
 
 export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmitted, assignmentDueDate }: RecitationRecorderProps) {
   const [isRecording, setIsRecording] = useState(false)
-  const [recordingDuration, setRecordingDuration] = useState(0)
+  const [recordingDuration, setRecordingDuration] = useState(0) // This is for UI display, updated by timer
+  const [processedAudioDuration, setProcessedAudioDuration] = useState<number | null>(null); // Stores duration from metadata
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -82,6 +83,7 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
     releaseAudioUrl()
     setAudioBlob(null)
     setRecordingDuration(0)
+    setProcessedAudioDuration(null); // Reset processed duration
     setError(null)
     setTranscript(null);
     setTranscriptionError(null);
@@ -98,7 +100,7 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
       audioChunksRef.current = []
       addDebugLog("Starting recording...")
       
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, })
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       streamRef.current = stream
       addDebugLog(`Got media stream with ${stream.getAudioTracks().length} audio tracks`)
       
@@ -116,7 +118,7 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
         }
       }
       if (!recorder) {
-         recorder = new MediaRecorder(stream); // Fallback to default
+         recorder = new MediaRecorder(stream);
          addDebugLog(`Created MediaRecorder with default settings: ${recorder.mimeType}`);
       }
       mediaRecorderRef.current = recorder
@@ -131,29 +133,24 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
       }
 
       recorder.onstop = () => {
-        addDebugLog(`Recording stopped. Processing ${audioChunksRef.current.length} chunks`)
+        addDebugLog(`Recording stopped. UI Duration: ${recordingDuration}s. Processing ${audioChunksRef.current.length} chunks`)
         processRecording()
       }
-      recorder.onerror = (event: any) => { // MediaRecorderErrorEvent
+      recorder.onerror = (event: any) => {
         const err = (event as MediaRecorderErrorEvent).error;
         addDebugLog(`MediaRecorder error: ${err?.name} - ${err?.message}`)
         setError(`Recording error: ${err?.name} - ${err?.message || "Unknown error"}`)
       }
       
-      // MODIFICATION: Use a smaller timeslice to get data chunks more frequently.
-      // This can help capture initial audio more reliably.
-      // The timer for UI duration will still update every second independently.
-      recorder.start(250); // Collect data every 250ms
+      recorder.start(250); 
       
       addDebugLog("MediaRecorder started with 250ms timeslice")
       setIsRecording(true)
 
-      // Start UI timer
-      setRecordingDuration(0); // Explicitly reset duration display
+      setRecordingDuration(0); 
       timerRef.current = setInterval(() => {
         setRecordingDuration((prev) => {
           const newDuration = prev + 1
-          // addDebugLog(`Timer tick: ${newDuration}s`) // Can be noisy, uncomment if needed
           if (newDuration >= 180) {
             addDebugLog("Max recording time reached (180s), stopping")
             stopRecording()
@@ -173,20 +170,19 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
 
   const stopRecording = () => {
     addDebugLog("Attempting to stop recording...")
-    setIsRecording(false); // Update UI immediately
-    clearTimerInterval(); // Stop the UI timer first
+    setIsRecording(false); 
+    clearTimerInterval(); 
     
     if (mediaRecorderRef.current) {
       const state = mediaRecorderRef.current.state;
       addDebugLog(`MediaRecorder state before stopping: ${state}`);
       if (state === "recording" || state === "paused") {
         try {
-          mediaRecorderRef.current.stop(); // This will trigger onstop and then processRecording
+          mediaRecorderRef.current.stop(); 
           addDebugLog("MediaRecorder.stop() called");
         } catch (err: any) {
           addDebugLog(`Error calling MediaRecorder.stop(): ${err.message}`);
           setError(`Error stopping recording: ${err.message}`);
-          // Try to process any chunks we might have
           if (audioChunksRef.current.length > 0) {
             processRecording();
           }
@@ -194,23 +190,23 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
       } else {
         addDebugLog(`MediaRecorder not in 'recording' or 'paused' state (current state: ${state}). Processing existing chunks if any.`);
         if (audioChunksRef.current.length > 0) {
-          processRecording(); // If already stopped or inactive, try processing what's there
+          processRecording(); 
+        } else {
+            stopMediaTracks(); // If no chunks and not recording, just stop tracks
         }
       }
     } else {
       addDebugLog("MediaRecorder ref is null, cannot stop.");
+      stopMediaTracks();
     }
-    // Tracks are stopped after processing, or if processing fails
-    stopMediaTracks(); // This should ideally be called after ensuring onstop has fired and processed.
-                     // Or if stop fails critically.
   }
 
   const processRecording = () => {
-    addDebugLog(`Processing recording with ${audioChunksRef.current.length} chunks`)
+    addDebugLog(`Processing recording with ${audioChunksRef.current.length} chunks. UI duration was ~${recordingDuration}s.`);
     if (audioChunksRef.current.length === 0) {
         addDebugLog("No audio chunks to process.");
         setError("No audio data was recorded. Please try again.");
-        resetRecordingStates(); // Ensure a clean state
+        resetRecordingStates(); 
         return;
     }
 
@@ -233,98 +229,101 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
       addDebugLog("Created audio element for duration check")
       
       audio.onloadedmetadata = () => {
-        const duration = audio.duration;
-        addDebugLog(`Audio metadata loaded, duration: ${duration} seconds`)
-        if (!duration || duration === Infinity || duration < 0.5) {
-          addDebugLog(`Audio duration invalid or too short: ${duration}s. Minimum 0.5s required.`)
-          setError("Recording is too short or couldn't be processed (min 0.5s). Please try again.")
-          URL.revokeObjectURL(url)
+        const durationFromMetadata = audio.duration;
+        addDebugLog(`Audio metadata loaded, durationFromMetadata: ${durationFromMetadata} seconds`);
+
+        if (!durationFromMetadata || isNaN(durationFromMetadata) || durationFromMetadata === Infinity || durationFromMetadata < 0.5) {
+          addDebugLog(`Audio duration invalid or too short: ${durationFromMetadata}s. Minimum 0.5s required.`);
+          setError("Recording is too short, duration is invalid, or couldn't be processed (min 0.5s). Please try again.");
+          URL.revokeObjectURL(url);
           resetRecordingStates();
-          setAudioBlob(null); // Explicitly nullify blob if duration is invalid
+          setAudioBlob(null); 
           setAudioUrl(null);
-          return
+          setProcessedAudioDuration(null);
+          return;
         }
-        setAudioBlob(blob)
-        setAudioUrl(url)
-        setRecordingDuration(Math.round(duration)) // Set duration from metadata
-        setError(null); // Clear any previous errors if processing is successful
-        addDebugLog(`Audio processed successfully, duration: ${Math.round(duration)}s`)
-      }
+        
+        setAudioBlob(blob);
+        setAudioUrl(url);
+        setProcessedAudioDuration(durationFromMetadata); // Store the accurate duration
+        setError(null); 
+        addDebugLog(`Audio processed successfully, accurate duration: ${durationFromMetadata}s`);
+      };
       audio.onerror = (e) => {
-        addDebugLog(`Error loading audio metadata: ${e}`)
-        setError("Failed to process recording. The audio file may be corrupted or an unknown error occurred.")
-        URL.revokeObjectURL(url)
+        const errorEvent = e.target as HTMLAudioElement;
+        const errorDetails = errorEvent.error ? `Code: ${errorEvent.error.code}, Message: ${errorEvent.error.message}` : "Unknown audio error";
+        addDebugLog(`Error loading audio metadata: ${errorDetails}`);
+        setError(`Failed to process recording metadata. The audio file may be corrupted or an unknown error occurred. Details: ${errorDetails}`);
+        URL.revokeObjectURL(url);
         resetRecordingStates();
-      }
+      };
     } catch (err: any) {
-      console.error("Error processing recording:", err)
-      addDebugLog(`Error processing recording: ${err.message}`)
-      setError(`Failed to process recording: ${err.message}`)
+      console.error("Error processing recording:", err);
+      addDebugLog(`Error processing recording: ${err.message}`);
+      setError(`Failed to process recording: ${err.message}`);
       resetRecordingStates();
     }
-    // Clean up stream tracks after processing is initiated
     stopMediaTracks();
   }
 
   const togglePlayback = () => {
-    if (!audioRef.current || !audioUrl) return
-
+    if (!audioRef.current || !audioUrl) return;
     if (isPlaying) {
-      audioRef.current.pause()
+      audioRef.current.pause();
     } else {
-      audioRef.current.currentTime = 0; // Reset to start before playing
+      audioRef.current.currentTime = 0; 
       audioRef.current.play().catch((err) => {
-        console.error("Error playing audio:", err)
-        addDebugLog(`Error playing audio: ${err.message}`)
-        setError(`Could not play audio: ${err.message}`)
-      })
+        console.error("Error playing audio:", err);
+        addDebugLog(`Error playing audio: ${err.message}`);
+        setError(`Could not play audio: ${err.message}`);
+      });
     }
-    // The onPlay and onPause events on the audio element will toggle isPlaying state
   }
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    resetRecordingStates(); // Reset before processing new file
-    const file = event.target.files?.[0]
-    if (!file) return
-    addDebugLog(`File selected: ${file.name}, type: ${file.type}, size: ${file.size} bytes`)
-    const validTypes = ["audio/wav", "audio/mpeg", "audio/mp3", "audio/ogg", "audio/webm", "audio/aac", "audio/mp4", "audio/x-m4a"]
-    if (!validTypes.some((type) => file.type.startsWith(type.split("/")[0]))) { // Broader check
-      setError("Please upload a valid audio file (e.g., WAV, MP3, M4A, OGG, WebM)")
-      return
+    resetRecordingStates();
+    const file = event.target.files?.[0];
+    if (!file) return;
+    addDebugLog(`File selected: ${file.name}, type: ${file.type}, size: ${file.size} bytes`);
+    const validTypes = ["audio/wav", "audio/mpeg", "audio/mp3", "audio/ogg", "audio/webm", "audio/aac", "audio/mp4", "audio/x-m4a"];
+    if (!validTypes.some((type) => file.type.startsWith(type.split("/")[0]))) {
+      setError("Please upload a valid audio file (e.g., WAV, MP3, M4A, OGG, WebM)");
+      return;
     }
-    if (file.size > 10 * 1024 * 1024) { // 10MB
-      setError("File size must be less than 10MB")
-      return
+    if (file.size > 10 * 1024 * 1024) {
+      setError("File size must be less than 10MB");
+      return;
     }
     
-    const url = URL.createObjectURL(file)
-    addDebugLog(`Created URL for uploaded file: ${url}`)
-    const audio = new Audio(url)
+    const url = URL.createObjectURL(file);
+    addDebugLog(`Created URL for uploaded file: ${url}`);
+    const audio = new Audio(url);
     audio.onloadedmetadata = () => {
       const duration = audio.duration;
-      addDebugLog(`Uploaded file metadata loaded, duration: ${duration} seconds`)
-      if (!duration || duration === Infinity || duration < 0.5) {
-        setError("Uploaded audio file is too short (min 0.5s) or duration is invalid.")
-        URL.revokeObjectURL(url)
-        return
+      addDebugLog(`Uploaded file metadata loaded, duration: ${duration} seconds`);
+      if (!duration || isNaN(duration) || duration === Infinity || duration < 0.5) {
+        setError("Uploaded audio file is too short (min 0.5s), duration is invalid, or couldn't be processed.");
+        URL.revokeObjectURL(url);
+        return;
       }
-      setAudioBlob(file)
-      setAudioUrl(url)
-      setRecordingDuration(Math.round(duration))
-      setError(null)
-      addDebugLog(`File processed successfully: ${url}`)
-    }
+      setAudioBlob(file);
+      setAudioUrl(url);
+      setProcessedAudioDuration(duration); // Store accurate duration
+      setError(null);
+      addDebugLog(`File processed successfully: ${url}`);
+    };
     audio.onerror = () => {
-      addDebugLog("Error loading uploaded file metadata")
-      setError("Failed to process uploaded audio file. It may be corrupted.")
-      URL.revokeObjectURL(url)
-    }
+      addDebugLog("Error loading uploaded file metadata");
+      setError("Failed to process uploaded audio file. It may be corrupted.");
+      URL.revokeObjectURL(url);
+    };
   }
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60)
-    const secs = Math.round(seconds % 60) // Round seconds
-    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+  const formatTime = (seconds: number | null) => {
+    if (seconds === null || isNaN(seconds)) return "00:00";
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.round(seconds % 60);
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   }
 
   const transcribeAudio = async () => {
@@ -338,7 +337,7 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
     addDebugLog("Starting transcription process")
     try {
       const formData = new FormData()
-      formData.append("file", audioBlob, audioBlob.name || "recording.webm") // Ensure filename is passed
+      formData.append("file", audioBlob, audioBlob.name || `recording-${Date.now()}.${audioBlob.type.split('/')[1] || 'webm'}`)
       const response = await fetch("https://taleem-ai-backend-production.up.railway.app/transcribe", {
         method: "POST",
         body: formData,
@@ -383,8 +382,8 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
 
   const updateRecitationTranscription = async (id: string, transcriptionText: string) => {
     try {
-      const supabase = createClientComponentClient(); //
-      const { error: updateError } = await supabase // Renamed error to avoid conflict
+      const supabase = createClientComponentClient();
+      const { error: updateError } = await supabase
         .from("recitations")
         .update({
           transcription: transcriptionText,
@@ -394,20 +393,18 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
         .eq("id", id)
       if (updateError) {
         addDebugLog(`Error updating transcription in database: ${updateError.message}`)
-        console.error("Error updating transcription:", updateError)
       } else {
         addDebugLog(`Successfully updated transcription in database for recitation ${id}`)
       }
     } catch (err: any) {
       addDebugLog(`Exception updating transcription: ${err.message}`)
-      console.error("Exception updating transcription:", err)
     }
   }
 
   const updateRecitationTranscriptionError = async (id: string, errorMessage: string) => {
     try {
-      const supabase = createClientComponentClient(); //
-      const { error: updateError } = await supabase // Renamed error
+      const supabase = createClientComponentClient();
+      const { error: updateError } = await supabase
         .from("recitations")
         .update({
           transcription_status: "error",
@@ -417,13 +414,11 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
         .eq("id", id)
       if (updateError) {
         addDebugLog(`Error updating transcription error in database: ${updateError.message}`)
-        console.error("Error updating transcription error:", updateError)
       } else {
         addDebugLog(`Successfully updated transcription error in database for recitation ${id}`)
       }
     } catch (err: any) {
       addDebugLog(`Exception updating transcription error: ${err.message}`)
-      console.error("Exception updating transcription error:", err)
     }
   }
 
@@ -436,22 +431,21 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
       setError("The recording is empty. Please record again.")
       return
     }
-    // Use the state `recordingDuration` which is updated from metadata
-    if (recordingDuration < 0.5) { 
-      setError("Recording is too short (min 0.5s). Please record a longer recitation.")
+    if (processedAudioDuration === null || processedAudioDuration < 0.5) { 
+      setError("Recording is too short (min 0.5s) or duration is invalid. Please record or upload a valid audio file.")
       return
     }
 
     setIsUploading(true)
-    setError(null) // Clear previous errors before new submission
-    addDebugLog(`Submitting audio: ${audioBlob.size} bytes, type: ${audioBlob.type}, duration: ${recordingDuration}s`)
+    setError(null)
+    addDebugLog(`Submitting audio: ${audioBlob.size} bytes, type: ${audioBlob.type}, duration: ${processedAudioDuration}s`)
 
     const submissionTime = new Date();
-    const isLate = isPastDuePST(assignmentDueDate, submissionTime.toISOString()); //
+    const isLate = isPastDuePST(assignmentDueDate, submissionTime.toISOString());
     addDebugLog(`Submission time (UTC): ${submissionTime.toISOString()}, Due date: ${assignmentDueDate}, Is late: ${isLate}`);
 
     try {
-      const supabase = createClientComponentClient(); //
+      const supabase = createClientComponentClient();
       let fileExtension = "webm"
       const mimeType = audioBlob.type.toLowerCase()
       if (mimeType.includes("mp3") || mimeType.includes("mpeg")) fileExtension = "mp3"
@@ -476,7 +470,7 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
       addDebugLog(`Upload successful: ${JSON.stringify(uploadData)}`);
 
       const { data: urlData } = supabase.storage.from("recitations").getPublicUrl(fileName)
-      const publicAudioUrl = urlData.publicUrl // Renamed to avoid conflict
+      const publicAudioUrl = urlData.publicUrl
       addDebugLog(`Got public URL: ${publicAudioUrl}`)
 
       const { error: updateError } = await supabase
@@ -494,7 +488,7 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
         .insert({
           assignment_id: assignmentId,
           student_id: studentId,
-          audio_url: publicAudioUrl, // Use renamed variable
+          audio_url: publicAudioUrl,
           submitted_at: submissionTime.toISOString(),
           is_latest: true,
           transcription: transcript || null,
@@ -515,7 +509,7 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
 
       try {
         addDebugLog("Triggering speech recognition processing via API call")
-        const response = await fetch("/api/speech-recognition", { //
+        const response = await fetch("/api/speech-recognition", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ recitationId: recitationData.id }),
@@ -530,28 +524,27 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
         addDebugLog(`Error triggering speech recognition: ${apiError.message}`)
       }
 
-      toast({ //
+      toast({
         title: "Recitation Submitted",
         description: `Your recitation has been submitted${isLate ? " (late)" : ""}.`,
       })
       onRecitationSubmitted(recitationData.id)
-      // No setIsUploading(false) here as the component will likely be replaced by RecitationFeedback
     } catch (err: any) {
       console.error("Error submitting recitation:", err)
       addDebugLog(`Submission error: ${err.message}`)
       setError(err.message || "Failed to submit recitation")
-      setIsUploading(false) // Set to false on error so user can try again
-      toast({ //
+      setIsUploading(false) 
+      toast({
         title: "Submission Failed",
         description: err.message || "Failed to submit recitation",
         variant: "destructive",
       })
     }
   }
-  // ... (rest of the component JSX, ensure the Submit button uses recordingDuration for its disabled check)
+  
   return (
-    <Card className="w-full"> {/* */}
-      <CardContent className="p-6 space-y-4"> {/* */}
+    <Card className="w-full">
+      <CardContent className="p-6 space-y-4">
         <div className="flex flex-col items-center">
           <h3 className="text-lg font-medium text-foreground mb-4">Record Your Recitation</h3>
 
@@ -571,7 +564,7 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
               <div className="animate-pulse mb-4 h-16 flex items-center justify-center">
                 <div className="bg-red-600 h-8 w-8 rounded-full"></div>
               </div>
-              <Button onClick={stopRecording} variant="destructive" size="lg" className="w-full sm:w-auto"> {/* */}
+              <Button onClick={stopRecording} variant="destructive" size="lg" className="w-full sm:w-auto">
                 <Square className="mr-2 h-4 w-4" />
                 Stop Recording
               </Button>
@@ -580,29 +573,27 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
           ) : audioUrl ? (
             <div className="w-full space-y-4">
               <div className="flex items-center justify-center bg-gray-100 dark:bg-gray-800 p-4 rounded-md">
-                <Button onClick={togglePlayback} variant="outline" size="icon" className="mr-4"> {/* */}
+                <Button onClick={togglePlayback} variant="outline" size="icon" className="mr-4">
                   {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                 </Button>
                 <audio
                   ref={audioRef}
                   src={audioUrl}
-                  className="hidden" // Keep hidden, control via button
+                  className="hidden" 
                   onEnded={() => setIsPlaying(false)}
                   onPlay={() => setIsPlaying(true)}
                   onPause={() => setIsPlaying(false)}
                 />
                 <div className="flex-1">
-                  {/* Optional: Progress bar for playback */}
                   <p className="text-xs text-muted-foreground">
-                    {isPlaying ? "Playing..." : "Ready to play"} Duration: {formatTime(recordingDuration)}
+                    {isPlaying ? "Playing..." : "Ready to play"} Duration: {formatTime(processedAudioDuration)}
                   </p>
                 </div>
               </div>
 
-              {/* Transcription section */}
               <div className="w-full">
-                {!transcript && !transcriptionError && !isTranscribing && audioBlob && ( // Only show if blob exists
-                  <Button onClick={transcribeAudio} variant="outline" className="w-full" disabled={isTranscribing}> {/* */}
+                {!transcript && !transcriptionError && !isTranscribing && audioBlob && ( 
+                  <Button onClick={transcribeAudio} variant="outline" className="w-full" disabled={isTranscribing}>
                     Transcribe Recitation (Optional)
                   </Button>
                 )}
@@ -629,13 +620,13 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
               </div>
 
               <div className="flex flex-col sm:flex-row gap-2 justify-center">
-                <Button //
+                <Button 
                   onClick={resetRecordingStates}
                   variant="outline"
                 >
                   Record/Upload Again
                 </Button>
-                <Button onClick={handleSubmit} disabled={isUploading || !audioBlob || recordingDuration < 0.5}> {/* */}
+                <Button onClick={handleSubmit} disabled={isUploading || !audioBlob || (processedAudioDuration !== null && processedAudioDuration < 0.5)}>
                   {isUploading ? "Submitting..." : "Submit Recitation"}
                 </Button>
               </div>
@@ -643,12 +634,12 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
           ) : (
             <div className="w-full space-y-6">
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Button onClick={startRecording} variant="default" size="lg" className="w-full sm:w-auto"> {/* */}
+                <Button onClick={startRecording} variant="default" size="lg" className="w-full sm:w-auto">
                   <Mic className="mr-2 h-4 w-4" />
                   Start Recording
                 </Button>
                 <div className="relative w-full sm:w-auto">
-                  <Button //
+                  <Button 
                     variant="outline"
                     size="lg"
                     className="w-full"
