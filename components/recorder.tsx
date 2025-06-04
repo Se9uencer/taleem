@@ -6,7 +6,7 @@ import { Mic, StopCircle, Pause, Play, Trash2, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { fetchFile, toBlobURL } from "@ffmpeg/util";
+import { fetchFile } from "@ffmpeg/util"; // toBlobURL is removed as we'll use direct paths
 
 interface RecorderProps {
   onRecordingComplete: (blob: Blob, duration: number) => void;
@@ -18,7 +18,7 @@ interface RecorderProps {
   isUploading?: boolean;
   autoSubmit?: boolean;
   ffmpegInstance?: FFmpeg | null;
-  basePath?: string;
+  basePath?: string; // Path in 'public' folder where FFmpeg core assets are stored
 }
 
 const Recorder: React.FC<RecorderProps> = ({
@@ -31,105 +31,97 @@ const Recorder: React.FC<RecorderProps> = ({
   isUploading = false,
   autoSubmit = false,
   ffmpegInstance,
-  basePath = "/ffmpeg", // Default base path for ffmpeg core
+  basePath = "/ffmpeg", // Default base path for FFmpeg core assets in the public folder
 }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(initialBlob);
   const [recordingDuration, setRecordingDuration] = useState<number>(initialDuration || 0);
-  const [elapsedTime, setElapsedTime] = useState<number>(0); // Elapsed time in seconds
+  const [elapsedTime, setElapsedTime] = useState<number>(0);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const startTimeRef = useRef<number>(0);
-  const pausedTimeRef = useRef<number>(0); // Time when paused
-  const totalPausedDurationRef = useRef<number>(0); // Total duration recording was paused
+  const pausedTimeRef = useRef<number>(0);
+  const totalPausedDurationRef = useRef<number>(0);
 
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const [ffmpeg, setFfmpeg] = useState<FFmpeg | null>(ffmpegInstance || null);
   const [ffmpegLoaded, setFfmpegLoaded] = useState(!!ffmpegInstance);
+  const [ffmpegLoadingError, setFfmpegLoadingError] = useState<string | null>(null);
 
 
   const loadFFmpeg = useCallback(async () => {
-    if (ffmpeg) return; // Already loaded or provided
+    if (ffmpeg || ffmpegLoaded) return; // Already loaded or provided, or already attempted
 
-    console.log("Loading FFmpeg...");
+    console.log("Loading FFmpeg using direct paths...");
+    setFfmpegLoadingError(null);
     const newFfmpeg = new FFmpeg();
     newFfmpeg.on("log", ({ message }) => {
-      console.log("FFmpeg log:", message);
+      // Avoid excessive logging in production, or make it conditional
+      // console.log("FFmpeg log:", message);
     });
 
     try {
-        // Dynamically determine the base URL for loading FFmpeg assets
-        const baseURL = await toBlobURL(`${basePath}/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js`, 'text/javascript');
-        const coreURL = await toBlobURL(`${basePath}/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm`, 'application/wasm');
-        const workerURL = await toBlobURL(`${basePath}/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.worker.js`, 'text/javascript');
+      // Construct direct paths to FFmpeg core files.
+      // These files MUST be available in your `public` folder under the `basePath` directory.
+      // For example, if basePath is "/ffmpeg", then:
+      // public/ffmpeg/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js
+      // public/ffmpeg/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm
+      // public/ffmpeg/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.worker.js
+      const coreJsPath = `${basePath}/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js`;
+      const coreWasmPath = `${basePath}/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm`;
+      const coreWorkerPath = `${basePath}/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.worker.js`;
 
-        await newFfmpeg.load({
-            coreURL: baseURL, //This seems to be the correct one for the main js
-            wasmURL: coreURL,
-            workerURL: workerURL,
-        });
-        console.log("FFmpeg loaded successfully.");
-        setFfmpeg(newFfmpeg);
-        setFfmpegLoaded(true);
+      await newFfmpeg.load({
+        coreURL: coreJsPath,
+        wasmURL: coreWasmPath,
+        workerURL: coreWorkerPath,
+      });
+      console.log("FFmpeg loaded successfully using direct paths.");
+      setFfmpeg(newFfmpeg);
+      setFfmpegLoaded(true);
     } catch (error) {
-        console.error("Failed to load FFmpeg:", error);
-        // Handle error (e.g., show a message to the user)
+      console.error("Failed to load FFmpeg using direct paths:", error);
+      setFfmpegLoadingError("Failed to load FFmpeg. Recorder will not function.");
+      // Consider providing more specific user feedback or retry mechanisms
     }
-  }, [ffmpeg, basePath]);
+  }, [ffmpeg, ffmpegLoaded, basePath]);
 
 
   useEffect(() => {
-    if (!ffmpegInstance) { // Only load if not provided
+    if (!ffmpegInstance && !ffmpegLoaded && !ffmpeg) { // Only load if not provided and not already loaded/attempted
         loadFFmpeg();
     }
-  }, [loadFFmpeg, ffmpegInstance]);
+  }, [loadFFmpeg, ffmpegInstance, ffmpegLoaded, ffmpeg]);
 
 
   const convertToMp3 = useCallback(async (inputBlob: Blob): Promise<Blob | null> => {
     if (!ffmpeg || !ffmpegLoaded) {
-      console.error("FFmpeg not loaded yet.");
+      console.error("FFmpeg not loaded yet. Cannot convert to MP3.");
+      setFfmpegLoadingError("FFmpeg not loaded. MP3 conversion failed.");
       return null;
     }
     if (!inputBlob || inputBlob.size === 0) {
-        console.error("Input blob is null or empty.");
+        console.error("Input blob is null or empty for MP3 conversion.");
         return null;
     }
 
     console.log("Starting MP3 conversion...");
     try {
-      const inputFileName = "input.webm"; // Or whatever the input format is, e.g., .ogg
+      const inputFileName = "input.webm";
       const outputFileName = "output.mp3";
 
-      console.log("Writing file to FFmpeg FS...");
       await ffmpeg.writeFile(inputFileName, await fetchFile(inputBlob));
-      console.log("File written. Running FFmpeg command...");
-
-      // Execute FFmpeg command
-      // -i: input file
-      // -acodec libmp3lame: specify mp3 codec
-      // -b:a 192k: set audio bitrate to 192 kbps (adjust as needed)
-      // -y: overwrite output file if it exists
-      const result = await ffmpeg.exec(["-i", inputFileName, "-acodec", "libmp3lame", "-b:a", "192k", outputFileName, "-y"]);
-      console.log("FFmpeg command executed. Result:", result);
-
-
-      console.log("Reading output file from FFmpeg FS...");
+      // -y overwrites output file if it exists
+      await ffmpeg.exec(["-i", inputFileName, "-acodec", "libmp3lame", "-b:a", "192k", outputFileName, "-y"]);
       const outputData = await ffmpeg.readFile(outputFileName);
-      console.log("Output file read. Creating blob...");
-
       const mp3Blob = new Blob([outputData], { type: "audio/mpeg" });
       console.log("MP3 blob created. Size:", mp3Blob.size);
-
-      // Clean up files from FFmpeg's virtual file system
-      // It's good practice but might not be strictly necessary if re-using filenames
-      // await ffmpeg.deleteFile(inputFileName);
-      // await ffmpeg.deleteFile(outputFileName);
-
-
+      // Optional: await ffmpeg.deleteFile(inputFileName);
+      // Optional: await ffmpeg.deleteFile(outputFileName);
       return mp3Blob;
     } catch (error) {
       console.error("Error during MP3 conversion:", error);
@@ -143,11 +135,11 @@ const Recorder: React.FC<RecorderProps> = ({
       clearInterval(timerIntervalRef.current);
     }
     timerIntervalRef.current = setInterval(() => {
-      if (startTimeRef.current > 0 && !isPaused) { // Ensure startTime is set and not paused
+      if (startTimeRef.current > 0 && !isPaused) {
         const currentElapsedTime = (Date.now() - startTimeRef.current - totalPausedDurationRef.current) / 1000;
         setElapsedTime(currentElapsedTime);
       }
-    }, 100); // Update every 100ms for smoother display
+    }, 100);
   }, [isPaused]);
 
   const stopTimer = useCallback(() => {
@@ -164,23 +156,28 @@ const Recorder: React.FC<RecorderProps> = ({
       stopTimer();
     }
     return () => {
-      stopTimer(); // Cleanup timer on component unmount or when recording stops
+      stopTimer();
     };
   }, [isRecording, isPaused, startTimer, stopTimer]);
 
 
   const handleStartRecording = async () => {
     if (!ffmpegLoaded && !ffmpegInstance) {
-        console.warn("FFmpeg is not loaded yet. Attempting to load now...");
-        await loadFFmpeg(); // Attempt to load if not already
-        if (!ffmpeg && !ffmpegInstance) { // Check again after attempt
-            alert("Recorder is not ready. Please wait for FFmpeg to load.");
+        console.warn("FFmpeg is not loaded yet. Attempting to load now if not already trying...");
+        if (!ffmpeg && !ffmpegLoadingError) { // Avoid re-triggering if already failed or loading
+            await loadFFmpeg();
+        }
+        if (!ffmpegLoaded && !ffmpegInstance) { // Check again
+            console.error("Recorder is not ready. FFmpeg is still loading or failed to load. Please check console for errors.");
+            // You might want to show this error in the UI
+            setFfmpegLoadingError("Recorder not ready. Please wait or check console.");
             return;
         }
     }
+    setFfmpegLoadingError(null); // Clear any previous loading error message on new attempt
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: "audio/webm" }); // Standardize to webm
+      mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: "audio/webm" });
       audioChunksRef.current = [];
 
       mediaRecorderRef.current.ondataavailable = (event) => {
@@ -192,7 +189,6 @@ const Recorder: React.FC<RecorderProps> = ({
       mediaRecorderRef.current.onstop = async () => {
         stopTimer();
         const finalElapsedTime = (Date.now() - startTimeRef.current - totalPausedDurationRef.current) / 1000;
-        // Ensure elapsedTime is a non-negative number, default to 0 if NaN or negative
         const validElapsedTime = Math.max(0, finalElapsedTime);
         setElapsedTime(validElapsedTime);
         setRecordingDuration(validElapsedTime);
@@ -200,48 +196,37 @@ const Recorder: React.FC<RecorderProps> = ({
         const audioBlobOriginal = new Blob(audioChunksRef.current, { type: "audio/webm" });
 
         if (ffmpeg && ffmpegLoaded && audioBlobOriginal.size > 0) {
-            console.log("Attempting to convert to MP3");
             const mp3Blob = await convertToMp3(audioBlobOriginal);
             if (mp3Blob) {
                 setAudioBlob(mp3Blob);
                 onRecordingComplete(mp3Blob, validElapsedTime);
-                if (autoSubmit) {
-                    handleUpload(mp3Blob, validElapsedTime);
-                }
+                if (autoSubmit) handleUpload(mp3Blob, validElapsedTime);
             } else {
                 console.warn("MP3 conversion failed. Using original WebM blob.");
                 setAudioBlob(audioBlobOriginal);
                 onRecordingComplete(audioBlobOriginal, validElapsedTime);
-                 if (autoSubmit) {
-                    handleUpload(audioBlobOriginal, validElapsedTime);
-                }
+                if (autoSubmit) handleUpload(audioBlobOriginal, validElapsedTime);
             }
         } else {
-            console.log("FFmpeg not available or blob empty, using original WebM blob");
             setAudioBlob(audioBlobOriginal);
             onRecordingComplete(audioBlobOriginal, validElapsedTime);
-             if (autoSubmit) {
-                handleUpload(audioBlobOriginal, validElapsedTime);
-            }
+            if (autoSubmit) handleUpload(audioBlobOriginal, validElapsedTime);
         }
-
-
-        // Clean up media stream tracks
         stream.getTracks().forEach(track => track.stop());
       };
 
       startTimeRef.current = Date.now();
-      totalPausedDurationRef.current = 0; // Reset paused duration
-      pausedTimeRef.current = 0; // Reset pause time
-      setElapsedTime(0); // Reset elapsed time
-      setRecordingDuration(0); // Reset recording duration
-      setAudioBlob(null); // Clear previous recording
+      totalPausedDurationRef.current = 0;
+      pausedTimeRef.current = 0;
+      setElapsedTime(0);
+      setRecordingDuration(0);
+      setAudioBlob(null);
       mediaRecorderRef.current.start();
       setIsRecording(true);
       setIsPaused(false);
     } catch (error) {
-      console.error("Error starting recording:", error);
-      alert("Could not start recording. Please ensure microphone access is allowed.");
+      console.error("Error starting recording:", error, "Ensure microphone access is allowed.");
+      // Update UI to show this error
     }
   };
 
@@ -250,7 +235,6 @@ const Recorder: React.FC<RecorderProps> = ({
       mediaRecorderRef.current.stop();
       setIsRecording(false);
       setIsPaused(false);
-      // Duration is now set in onstop
     }
   };
 
@@ -258,8 +242,8 @@ const Recorder: React.FC<RecorderProps> = ({
     if (mediaRecorderRef.current && isRecording && !isPaused) {
       mediaRecorderRef.current.pause();
       setIsPaused(true);
-      pausedTimeRef.current = Date.now(); // Record time when paused
-      stopTimer(); // Stop the timer display while paused
+      pausedTimeRef.current = Date.now();
+      stopTimer();
     }
   };
 
@@ -267,12 +251,11 @@ const Recorder: React.FC<RecorderProps> = ({
     if (mediaRecorderRef.current && isRecording && isPaused) {
       mediaRecorderRef.current.resume();
       setIsPaused(false);
-      // Add the duration of the pause to the total paused duration
       if (pausedTimeRef.current > 0) {
         totalPausedDurationRef.current += (Date.now() - pausedTimeRef.current);
-        pausedTimeRef.current = 0; // Reset pause time
+        pausedTimeRef.current = 0;
       }
-      startTimer(); // Restart the timer display
+      startTimer();
     }
   };
 
@@ -287,9 +270,9 @@ const Recorder: React.FC<RecorderProps> = ({
     pausedTimeRef.current = 0;
     totalPausedDurationRef.current = 0;
     if (audioRef.current) {
-      audioRef.current.src = ""; // Clear audio player source
+      audioRef.current.src = "";
     }
-    // No need to call stopTimer explicitly as useEffect handles it
+    setFfmpegLoadingError(null); // Clear ffmpeg error on retake
   };
 
   const handleUpload = async (blobToUpload?: Blob, durationToUpload?: number) => {
@@ -299,10 +282,10 @@ const Recorder: React.FC<RecorderProps> = ({
     if (currentBlob && onUpload && typeof currentDuration === 'number' && currentDuration > 0) {
       await onUpload(currentBlob, currentDuration);
     } else if (currentDuration === 0) {
-        console.warn("Attempted to upload a zero-duration recording.");
-        alert("Cannot upload an empty recording.");
+        console.warn("Attempted to upload a zero-duration recording. Upload prevented.");
+        // Update UI to show this error
     } else {
-      console.warn("No recording available to upload or onUpload not provided.");
+      console.warn("No recording available to upload or onUpload handler not provided.");
     }
   };
 
@@ -325,12 +308,17 @@ const Recorder: React.FC<RecorderProps> = ({
     )}`;
   };
 
+  const startButtonDisabled = (!ffmpegLoaded && !ffmpegInstance) || !!ffmpegLoadingError;
+
   return (
     <Card className="w-full max-w-md mx-auto shadow-lg">
       <CardContent className="pt-6">
         <div className="flex flex-col items-center space-y-4">
-          {!ffmpegLoaded && !ffmpegInstance && (
+          {(!ffmpegLoaded && !ffmpegInstance && !ffmpegLoadingError) && (
             <div className="text-sm text-yellow-500">FFmpeg loading... please wait.</div>
+          )}
+          {ffmpegLoadingError && (
+            <div className="text-sm text-red-500 p-2 bg-red-100 border border-red-300 rounded-md">{ffmpegLoadingError}</div>
           )}
           <div
             className={cn(
@@ -345,8 +333,9 @@ const Recorder: React.FC<RecorderProps> = ({
             <Button
               onClick={handleStartRecording}
               size="lg"
-              className="rounded-full w-20 h-20 bg-green-500 hover:bg-green-600"
-              disabled={!ffmpegLoaded && !ffmpegInstance}
+              className="rounded-full w-20 h-20 bg-green-500 hover:bg-green-600 disabled:bg-gray-400"
+              disabled={startButtonDisabled}
+              title={startButtonDisabled ? ffmpegLoadingError || "FFmpeg not loaded" : "Start Recording"}
             >
               <Mic size={32} />
             </Button>
@@ -398,12 +387,12 @@ const Recorder: React.FC<RecorderProps> = ({
           )}
         </div>
       </CardContent>
-      <CardFooter className="text-xs text-gray-500 dark:text-gray-400 justify-center">
+      <CardFooter className="text-xs text-gray-500 dark:text-gray-400 justify-center min-h-[20px]">
         {isRecording
           ? isPaused ? "Recording paused. Press play to resume." : "Recording in progress..."
           : audioBlob
           ? "Recording complete. Review or retake."
-          : "Press the mic to start recording."}
+          : startButtonDisabled ? "Recorder disabled until FFmpeg loads." : "Press the mic to start recording."}
       </CardFooter>
     </Card>
   );
