@@ -1,382 +1,412 @@
-"use client"
+"use client";
 
-import { useRef, useState } from "react"
-import { createClientComponentClient } from "@/lib/supabase/client"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { AlertCircle } from "lucide-react"
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { Button } from "@/components/ui/button";
+import { Mic, StopCircle, Pause, Play, Trash2, Check } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Card, CardContent, CardFooter } from "@/components/ui/card";
+import { FFmpeg } from "@ffmpeg/ffmpeg";
+import { fetchFile, toBlobURL } from "@ffmpeg/util";
 
 interface RecorderProps {
-  assignmentId: string
-  studentId: string
-  dueDate?: string
-  onRecitationSubmitted: (recitationId: string) => void
+  onRecordingComplete: (blob: Blob, duration: number) => void;
+  onUpload?: (blob: Blob, duration: number) => Promise<void>;
+  showUploadButton?: boolean;
+  uploadButtonText?: string;
+  initialBlob?: Blob | null;
+  initialDuration?: number | null;
+  isUploading?: boolean;
+  autoSubmit?: boolean;
+  ffmpegInstance?: FFmpeg | null;
+  basePath?: string;
 }
 
-export default function Recorder({ assignmentId, studentId, dueDate, onRecitationSubmitted }: RecorderProps) {
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const [isRecording, setIsRecording] = useState(false)
-  const [audioUrl, setAudioUrl] = useState("")
-  const [duration, setDuration] = useState<number | null>(null)
-  const [error, setError] = useState("")
-  const [isUploading, setIsUploading] = useState(false)
-  const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
-  const [debugInfo, setDebugInfo] = useState<string[]>([])
+const Recorder: React.FC<RecorderProps> = ({
+  onRecordingComplete,
+  onUpload,
+  showUploadButton = true,
+  uploadButtonText = "Upload Recording",
+  initialBlob = null,
+  initialDuration = null,
+  isUploading = false,
+  autoSubmit = false,
+  ffmpegInstance,
+  basePath = "/ffmpeg", // Default base path for ffmpeg core
+}) => {
+  const [isRecording, setIsRecording] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(initialBlob);
+  const [recordingDuration, setRecordingDuration] = useState<number>(initialDuration || 0);
+  const [elapsedTime, setElapsedTime] = useState<number>(0); // Elapsed time in seconds
 
-  const chunksRef = useRef<Blob[]>([])
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const startTimeRef = useRef<number>(0);
+  const pausedTimeRef = useRef<number>(0); // Time when paused
+  const totalPausedDurationRef = useRef<number>(0); // Total duration recording was paused
 
-  // Helper function to add debug information
-  const addDebugInfo = (info: string) => {
-    console.log(`[Recorder] ${info}`)
-    setDebugInfo((prev) => [...prev, info])
-  }
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const startRecording = async () => {
-    setError("")
-    chunksRef.current = []
+  const [ffmpeg, setFfmpeg] = useState<FFmpeg | null>(ffmpegInstance || null);
+  const [ffmpegLoaded, setFfmpegLoaded] = useState(!!ffmpegInstance);
+
+
+  const loadFFmpeg = useCallback(async () => {
+    if (ffmpeg) return; // Already loaded or provided
+
+    console.log("Loading FFmpeg...");
+    const newFfmpeg = new FFmpeg();
+    newFfmpeg.on("log", ({ message }) => {
+      console.log("FFmpeg log:", message);
+    });
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        // Dynamically determine the base URL for loading FFmpeg assets
+        const baseURL = await toBlobURL(`${basePath}/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js`, 'text/javascript');
+        const coreURL = await toBlobURL(`${basePath}/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm`, 'application/wasm');
+        const workerURL = await toBlobURL(`${basePath}/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.worker.js`, 'text/javascript');
 
-      // Check for supported MIME types
-      let mimeType = "audio/webm"
-      let options = {}
+        await newFfmpeg.load({
+            coreURL: baseURL, //This seems to be the correct one for the main js
+            wasmURL: coreURL,
+            workerURL: workerURL,
+        });
+        console.log("FFmpeg loaded successfully.");
+        setFfmpeg(newFfmpeg);
+        setFfmpegLoaded(true);
+    } catch (error) {
+        console.error("Failed to load FFmpeg:", error);
+        // Handle error (e.g., show a message to the user)
+    }
+  }, [ffmpeg, basePath]);
 
-      // Try to detect MIME type support
-      if (MediaRecorder.isTypeSupported("audio/webm")) {
-        mimeType = "audio/webm"
-        options = { mimeType }
-      } else if (MediaRecorder.isTypeSupported("audio/mp4")) {
-        mimeType = "audio/mp4"
-        options = { mimeType }
-      } else if (MediaRecorder.isTypeSupported("audio/ogg")) {
-        mimeType = "audio/ogg"
-        options = { mimeType }
+
+  useEffect(() => {
+    if (!ffmpegInstance) { // Only load if not provided
+        loadFFmpeg();
+    }
+  }, [loadFFmpeg, ffmpegInstance]);
+
+
+  const convertToMp3 = useCallback(async (inputBlob: Blob): Promise<Blob | null> => {
+    if (!ffmpeg || !ffmpegLoaded) {
+      console.error("FFmpeg not loaded yet.");
+      return null;
+    }
+    if (!inputBlob || inputBlob.size === 0) {
+        console.error("Input blob is null or empty.");
+        return null;
+    }
+
+    console.log("Starting MP3 conversion...");
+    try {
+      const inputFileName = "input.webm"; // Or whatever the input format is, e.g., .ogg
+      const outputFileName = "output.mp3";
+
+      console.log("Writing file to FFmpeg FS...");
+      await ffmpeg.writeFile(inputFileName, await fetchFile(inputBlob));
+      console.log("File written. Running FFmpeg command...");
+
+      // Execute FFmpeg command
+      // -i: input file
+      // -acodec libmp3lame: specify mp3 codec
+      // -b:a 192k: set audio bitrate to 192 kbps (adjust as needed)
+      // -y: overwrite output file if it exists
+      const result = await ffmpeg.exec(["-i", inputFileName, "-acodec", "libmp3lame", "-b:a", "192k", outputFileName, "-y"]);
+      console.log("FFmpeg command executed. Result:", result);
+
+
+      console.log("Reading output file from FFmpeg FS...");
+      const outputData = await ffmpeg.readFile(outputFileName);
+      console.log("Output file read. Creating blob...");
+
+      const mp3Blob = new Blob([outputData], { type: "audio/mpeg" });
+      console.log("MP3 blob created. Size:", mp3Blob.size);
+
+      // Clean up files from FFmpeg's virtual file system
+      // It's good practice but might not be strictly necessary if re-using filenames
+      // await ffmpeg.deleteFile(inputFileName);
+      // await ffmpeg.deleteFile(outputFileName);
+
+
+      return mp3Blob;
+    } catch (error) {
+      console.error("Error during MP3 conversion:", error);
+      return null;
+    }
+  }, [ffmpeg, ffmpegLoaded]);
+
+
+  const startTimer = useCallback(() => {
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+    }
+    timerIntervalRef.current = setInterval(() => {
+      if (startTimeRef.current > 0 && !isPaused) { // Ensure startTime is set and not paused
+        const currentElapsedTime = (Date.now() - startTimeRef.current - totalPausedDurationRef.current) / 1000;
+        setElapsedTime(currentElapsedTime);
       }
+    }, 100); // Update every 100ms for smoother display
+  }, [isPaused]);
 
-      // Create MediaRecorder with fallback
-      let mediaRecorder
-      try {
-        mediaRecorder = new MediaRecorder(stream, options)
-        addDebugInfo(`MediaRecorder initialized with MIME type: ${mimeType}`)
-      } catch (err) {
-        addDebugInfo(`Failed to create MediaRecorder with options. Using default.`)
-        mediaRecorder = new MediaRecorder(stream)
-      }
+  const stopTimer = useCallback(() => {
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+  }, []);
 
-      mediaRecorder.ondataavailable = (event) => {
-        addDebugInfo(`ondataavailable: event.data.size = ${event.data.size}`)
+  useEffect(() => {
+    if (isRecording && !isPaused) {
+      startTimer();
+    } else {
+      stopTimer();
+    }
+    return () => {
+      stopTimer(); // Cleanup timer on component unmount or when recording stops
+    };
+  }, [isRecording, isPaused, startTimer, stopTimer]);
+
+
+  const handleStartRecording = async () => {
+    if (!ffmpegLoaded && !ffmpegInstance) {
+        console.warn("FFmpeg is not loaded yet. Attempting to load now...");
+        await loadFFmpeg(); // Attempt to load if not already
+        if (!ffmpeg && !ffmpegInstance) { // Check again after attempt
+            alert("Recorder is not ready. Please wait for FFmpeg to load.");
+            return;
+        }
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: "audio/webm" }); // Standardize to webm
+      audioChunksRef.current = [];
+
+      mediaRecorderRef.current.ondataavailable = (event) => {
         if (event.data.size > 0) {
-          chunksRef.current.push(event.data)
+          audioChunksRef.current.push(event.data);
         }
-      }
+      };
 
-      mediaRecorder.onstop = () => {
-        addDebugInfo(`onstop: chunksRef.current.length = ${chunksRef.current.length}`)
-        const blob = new Blob(chunksRef.current, { type: mediaRecorder.mimeType || "audio/webm" })
-        addDebugInfo(`onstop: blob.size = ${blob.size}`)
+      mediaRecorderRef.current.onstop = async () => {
+        stopTimer();
+        const finalElapsedTime = (Date.now() - startTimeRef.current - totalPausedDurationRef.current) / 1000;
+        // Ensure elapsedTime is a non-negative number, default to 0 if NaN or negative
+        const validElapsedTime = Math.max(0, finalElapsedTime);
+        setElapsedTime(validElapsedTime);
+        setRecordingDuration(validElapsedTime);
 
-        if (blob.size === 0) {
-          setError("Recording failed: empty audio. (No audio data was captured. Try a different browser or check your mic permissions.)")
-          addDebugInfo("Recording failed: empty audio blob.")
-          return
-        }
+        const audioBlobOriginal = new Blob(audioChunksRef.current, { type: "audio/webm" });
 
-        const url = URL.createObjectURL(blob)
-        setAudioUrl(url)
-        setAudioBlob(blob)
-
-        const audio = new Audio(url)
-        audio.onloadedmetadata = () => {
-          setDuration(audio.duration)
-          addDebugInfo(`audio.onloadedmetadata: duration = ${audio.duration}`)
-        }
-      }
-
-      mediaRecorder.start()
-      mediaRecorderRef.current = mediaRecorder
-      setIsRecording(true)
-    } catch (err) {
-      console.error(err)
-      setError("Could not start recording. Please allow microphone access.")
-    }
-  }
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop()
-      mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop())
-      setIsRecording(false)
-    }
-  }
-
-  // Function to try creating a bucket if it doesn't exist
-  const ensureBucketExists = async (supabase: any, bucketName: string) => {
-    try {
-      addDebugInfo(`Checking if bucket '${bucketName}' exists...`)
-
-      // Try to get bucket info first
-      const { data: bucketInfo, error: bucketInfoError } = await supabase.storage.getBucket(bucketName)
-
-      if (bucketInfoError) {
-        addDebugInfo(`Bucket '${bucketName}' not found, attempting to create it...`)
-
-        // Try to create the bucket
-        const { data, error } = await supabase.storage.createBucket(bucketName, {
-          public: true,
-          fileSizeLimit: 50 * 1024 * 1024, // 50MB limit
-        })
-
-        if (error) {
-          addDebugInfo(`Failed to create bucket: ${error.message}`)
-          return false
-        }
-
-        addDebugInfo(`Successfully created bucket '${bucketName}'`)
-        return true
-      }
-
-      addDebugInfo(`Bucket '${bucketName}' already exists`)
-      return true
-    } catch (err) {
-      addDebugInfo(`Error checking/creating bucket: ${err.message}`)
-      return false
-    }
-  }
-
-  const handleSubmit = async () => {
-    if (!audioBlob || !duration) {
-      setError("Please record audio before submitting")
-      return
-    }
-
-    setIsUploading(true)
-    setError("")
-    addDebugInfo("Starting submission process...")
-
-    // Check if late (for logging/alerting, not blocking)
-    let isLate = false
-    if (dueDate) {
-      const now = new Date()
-      const due = new Date(dueDate)
-      isLate = now > due
-      if (isLate) {
-        addDebugInfo("This submission is LATE.")
-      }
-    }
-
-    try {
-      const supabase = createClientComponentClient()
-
-      // Get the actual MIME type from the blob
-      const mimeType = audioBlob.type || "audio/webm"
-      addDebugInfo(`Audio MIME type: ${mimeType}`)
-
-      // Determine file extension based on MIME type
-      let fileExtension = "webm"
-      if (mimeType.includes("mp4")) {
-        fileExtension = "mp4"
-      } else if (mimeType.includes("ogg")) {
-        fileExtension = "ogg"
-      }
-
-      // Create a unique filename
-      const fileName = `${Date.now()}.${fileExtension}`
-      addDebugInfo(`Generated filename: ${fileName}`)
-
-      // Try to list available buckets
-      let availableBuckets: string[] = []
-      try {
-        const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets()
-
-        if (bucketsError) {
-          addDebugInfo(`Error listing buckets: ${bucketsError.message}`)
-        } else {
-          availableBuckets = buckets.map((b) => b.name)
-          addDebugInfo(`Available buckets: ${availableBuckets.join(", ") || "none"}`)
-        }
-      } catch (err) {
-        addDebugInfo(`Exception listing buckets: ${err.message}`)
-      }
-
-      // Try to create buckets if none exist
-      const bucketNames = ["public", "recitations", "audio"]
-      let uploadSuccess = false
-      let publicUrl = ""
-
-      // Try each bucket name
-      for (const bucketName of bucketNames) {
-        if (!uploadSuccess) {
-          try {
-            // Try to ensure the bucket exists
-            const bucketExists = await ensureBucketExists(supabase, bucketName)
-
-            if (bucketExists || availableBuckets.includes(bucketName)) {
-              addDebugInfo(`Attempting upload to bucket '${bucketName}'...`)
-
-              const { data: uploadData, error: uploadError } = await supabase.storage
-                .from(bucketName)
-                .upload(`recitations/${studentId}/${fileName}`, audioBlob, {
-                  contentType: mimeType,
-                  upsert: true,
-                })
-
-              if (uploadError) {
-                addDebugInfo(`Upload to '${bucketName}' failed: ${uploadError.message}`)
-              } else {
-                addDebugInfo(`Upload to '${bucketName}' successful!`)
-
-                // Get public URL
-                const { data: urlData } = supabase.storage
-                  .from(bucketName)
-                  .getPublicUrl(`recitations/${studentId}/${fileName}`)
-
-                publicUrl = urlData.publicUrl
-                addDebugInfo(`Generated public URL: ${publicUrl}`)
-                uploadSuccess = true
-                break
-              }
+        if (ffmpeg && ffmpegLoaded && audioBlobOriginal.size > 0) {
+            console.log("Attempting to convert to MP3");
+            const mp3Blob = await convertToMp3(audioBlobOriginal);
+            if (mp3Blob) {
+                setAudioBlob(mp3Blob);
+                onRecordingComplete(mp3Blob, validElapsedTime);
+                if (autoSubmit) {
+                    handleUpload(mp3Blob, validElapsedTime);
+                }
+            } else {
+                console.warn("MP3 conversion failed. Using original WebM blob.");
+                setAudioBlob(audioBlobOriginal);
+                onRecordingComplete(audioBlobOriginal, validElapsedTime);
+                 if (autoSubmit) {
+                    handleUpload(audioBlobOriginal, validElapsedTime);
+                }
             }
-          } catch (err) {
-            addDebugInfo(`Exception trying bucket '${bucketName}': ${err.message}`)
-          }
+        } else {
+            console.log("FFmpeg not available or blob empty, using original WebM blob");
+            setAudioBlob(audioBlobOriginal);
+            onRecordingComplete(audioBlobOriginal, validElapsedTime);
+             if (autoSubmit) {
+                handleUpload(audioBlobOriginal, validElapsedTime);
+            }
         }
-      }
 
-      // If all storage attempts failed, use a temporary URL
-      if (!uploadSuccess) {
-        addDebugInfo("All storage upload attempts failed. Using temporary URL.")
-        // In a real app, we might use a temporary file hosting service or base64 encode the audio
-        // For now, we'll just note that the upload failed but continue with the submission
-        publicUrl = "storage-upload-failed"
-      }
 
-      // Update previous submissions to not be latest
-      addDebugInfo("Updating previous submissions...")
-      await supabase
-        .from("recitations")
-        .update({ is_latest: false })
-        .eq("student_id", studentId)
-        .eq("assignment_id", assignmentId)
+        // Clean up media stream tracks
+        stream.getTracks().forEach(track => track.stop());
+      };
 
-      // Create recitation record - REMOVED processing_status field since it doesn't exist in the schema
-      addDebugInfo("Creating recitation record...")
-      const { data: recitationData, error: recitationError } = await supabase
-        .from("recitations")
-        .insert({
-          assignment_id: assignmentId,
-          student_id: studentId,
-          audio_url: publicUrl,
-          submitted_at: new Date().toISOString(),
-          is_latest: true,
-        })
-        .select()
-        .single()
-
-      if (recitationError) {
-        throw new Error(`Failed to save recitation: ${recitationError.message}`)
-      }
-
-      addDebugInfo(`Recitation record created with ID: ${recitationData.id}`)
-
-      // Only trigger speech recognition if upload was successful
-      if (uploadSuccess) {
-        try {
-          addDebugInfo("Triggering speech recognition...")
-          await fetch("/api/speech-recognition", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ recitationId: recitationData.id }),
-          })
-          addDebugInfo("Speech recognition triggered successfully")
-        } catch (apiError) {
-          addDebugInfo(`Error triggering speech recognition: ${apiError.message}`)
-          // Continue despite this error - it's not critical
-        }
-      }
-
-      // Call the callback with the recitation ID
-      onRecitationSubmitted(recitationData.id)
-    } catch (err: any) {
-      console.error("Error submitting recitation:", err)
-      setError(err.message || "Failed to submit recitation")
-      setIsUploading(false)
+      startTimeRef.current = Date.now();
+      totalPausedDurationRef.current = 0; // Reset paused duration
+      pausedTimeRef.current = 0; // Reset pause time
+      setElapsedTime(0); // Reset elapsed time
+      setRecordingDuration(0); // Reset recording duration
+      setAudioBlob(null); // Clear previous recording
+      mediaRecorderRef.current.start();
+      setIsRecording(true);
+      setIsPaused(false);
+    } catch (error) {
+      console.error("Error starting recording:", error);
+      alert("Could not start recording. Please ensure microphone access is allowed.");
     }
-  }
+  };
 
-  const resetRecording = () => {
-    if (audioUrl) {
-      URL.revokeObjectURL(audioUrl)
+  const handleStopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      setIsPaused(false);
+      // Duration is now set in onstop
     }
-    setAudioUrl("")
-    setAudioBlob(null)
-    setDuration(null)
-    setError("")
-  }
+  };
+
+  const handlePauseRecording = () => {
+    if (mediaRecorderRef.current && isRecording && !isPaused) {
+      mediaRecorderRef.current.pause();
+      setIsPaused(true);
+      pausedTimeRef.current = Date.now(); // Record time when paused
+      stopTimer(); // Stop the timer display while paused
+    }
+  };
+
+  const handleResumeRecording = () => {
+    if (mediaRecorderRef.current && isRecording && isPaused) {
+      mediaRecorderRef.current.resume();
+      setIsPaused(false);
+      // Add the duration of the pause to the total paused duration
+      if (pausedTimeRef.current > 0) {
+        totalPausedDurationRef.current += (Date.now() - pausedTimeRef.current);
+        pausedTimeRef.current = 0; // Reset pause time
+      }
+      startTimer(); // Restart the timer display
+    }
+  };
+
+  const handleRetakeRecording = () => {
+    setAudioBlob(null);
+    setRecordingDuration(0);
+    setElapsedTime(0);
+    setIsRecording(false);
+    setIsPaused(false);
+    audioChunksRef.current = [];
+    startTimeRef.current = 0;
+    pausedTimeRef.current = 0;
+    totalPausedDurationRef.current = 0;
+    if (audioRef.current) {
+      audioRef.current.src = ""; // Clear audio player source
+    }
+    // No need to call stopTimer explicitly as useEffect handles it
+  };
+
+  const handleUpload = async (blobToUpload?: Blob, durationToUpload?: number) => {
+    const currentBlob = blobToUpload || audioBlob;
+    const currentDuration = durationToUpload || recordingDuration;
+
+    if (currentBlob && onUpload && typeof currentDuration === 'number' && currentDuration > 0) {
+      await onUpload(currentBlob, currentDuration);
+    } else if (currentDuration === 0) {
+        console.warn("Attempted to upload a zero-duration recording.");
+        alert("Cannot upload an empty recording.");
+    } else {
+      console.warn("No recording available to upload or onUpload not provided.");
+    }
+  };
+
+
+  useEffect(() => {
+    if (audioBlob && audioRef.current) {
+      audioRef.current.src = URL.createObjectURL(audioBlob);
+    }
+  }, [audioBlob]);
+
+  const formatTime = (timeInSeconds: number): string => {
+    if (isNaN(timeInSeconds) || timeInSeconds < 0) {
+        return "00:00";
+    }
+    const minutes = Math.floor(timeInSeconds / 60);
+    const seconds = Math.floor(timeInSeconds % 60);
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(
+      2,
+      "0"
+    )}`;
+  };
 
   return (
-    <Card className="w-full">
-      <CardContent className="p-6 space-y-4">
-        <div className="flex flex-col items-center">
-          <h3 className="text-lg font-medium text-foreground mb-4">Record Your Recitation</h3>
+    <Card className="w-full max-w-md mx-auto shadow-lg">
+      <CardContent className="pt-6">
+        <div className="flex flex-col items-center space-y-4">
+          {!ffmpegLoaded && !ffmpegInstance && (
+            <div className="text-sm text-yellow-500">FFmpeg loading... please wait.</div>
+          )}
+          <div
+            className={cn(
+              "text-4xl font-mono",
+              isRecording && !isPaused ? "text-red-500 animate-pulse" : "text-gray-700 dark:text-gray-300"
+            )}
+          >
+            {formatTime(isRecording ? elapsedTime : recordingDuration)}
+          </div>
 
-          {error && (
-            <div className="w-full bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-md mb-4 flex items-start">
-              <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="font-medium">Recording Error</p>
-                <p className="text-sm">{error}</p>
-              </div>
+          {!isRecording && !audioBlob && (
+            <Button
+              onClick={handleStartRecording}
+              size="lg"
+              className="rounded-full w-20 h-20 bg-green-500 hover:bg-green-600"
+              disabled={!ffmpegLoaded && !ffmpegInstance}
+            >
+              <Mic size={32} />
+            </Button>
+          )}
+
+          {isRecording && (
+            <div className="flex space-x-3">
+              <Button
+                onClick={isPaused ? handleResumeRecording : handlePauseRecording}
+                variant="outline"
+                size="icon"
+                className="rounded-full"
+              >
+                {isPaused ? <Play size={20} /> : <Pause size={20} />}
+              </Button>
+              <Button
+                onClick={handleStopRecording}
+                variant="destructive"
+                size="icon"
+                className="rounded-full"
+              >
+                <StopCircle size={20} />
+              </Button>
             </div>
           )}
 
-          <div className="w-full space-y-4">
-            <div>
-              {isRecording ? (
-                <Button onClick={stopRecording} variant="destructive" size="lg" className="w-full">
-                  Stop Recording
+          {audioBlob && !isRecording && (
+            <div className="w-full space-y-3">
+              <audio ref={audioRef} controls className="w-full" />
+              <div className="flex justify-around space-x-2">
+                <Button
+                  onClick={handleRetakeRecording}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" /> Retake
                 </Button>
-              ) : (
-                <Button onClick={startRecording} variant="default" size="lg" className="w-full">
-                  Start Recording
-                </Button>
-              )}
-            </div>
-
-            {audioUrl && (
-              <div className="space-y-4">
-                <audio controls src={audioUrl} className="w-full" />
-                {duration && (
-                  <p className="text-sm text-center text-muted-foreground">Duration: {duration.toFixed(2)} seconds</p>
+                {showUploadButton && onUpload && (
+                  <Button
+                    onClick={() => handleUpload()}
+                    className="flex-1 bg-blue-500 hover:bg-blue-600"
+                    disabled={isUploading || recordingDuration === 0}
+                  >
+                    {isUploading ? "Uploading..." : <> <Check className="mr-2 h-4 w-4" /> {uploadButtonText} </>}
+                  </Button>
                 )}
-
-                <div className="flex flex-col sm:flex-row gap-2 justify-center">
-                  <Button onClick={resetRecording} variant="outline">
-                    Record Again
-                  </Button>
-                  <Button onClick={handleSubmit} disabled={isUploading || !duration}>
-                    {isUploading ? "Submitting..." : "Submit Recitation"}
-                  </Button>
-                </div>
               </div>
-            )}
-          </div>
-
-          {/* Debug information (collapsible) */}
-          {debugInfo.length > 0 && (
-            <details className="w-full mt-6 text-xs border rounded-md p-2">
-              <summary className="cursor-pointer font-medium">Debug Information</summary>
-              <div className="mt-2 max-h-40 overflow-y-auto font-mono whitespace-pre-wrap text-gray-600 dark:text-gray-400">
-                {debugInfo.map((log, i) => (
-                  <div key={i} className="border-b border-gray-100 dark:border-gray-800 py-1">
-                    {log}
-                  </div>
-                ))}
-              </div>
-            </details>
+            </div>
           )}
         </div>
       </CardContent>
+      <CardFooter className="text-xs text-gray-500 dark:text-gray-400 justify-center">
+        {isRecording
+          ? isPaused ? "Recording paused. Press play to resume." : "Recording in progress..."
+          : audioBlob
+          ? "Recording complete. Review or retake."
+          : "Press the mic to start recording."}
+      </CardFooter>
     </Card>
-  )
-}
+  );
+};
+
+export default Recorder;
