@@ -134,7 +134,6 @@ export async function POST(request: Request) {
         recitation_id: recitationId,
         accuracy: accuracy,
         notes: notes,
-        transcript: transcribedText, 
         expected_text: expectedQuranText || `Reference: Surah ${recitation.assignments.surah_name}, Ayahs ${recitation.assignments.start_ayah}-${recitation.assignments.end_ayah}`,
         generated_at: new Date().toISOString(),
       })
@@ -147,13 +146,12 @@ export async function POST(request: Request) {
     }
     console.log("Feedback saved successfully:", feedback);
     
-    // Optionally: Update recitation table with transcription details (if you have such fields)
-    // e.g., transcription_status: "completed", transcription: transcribedText
-    // await supabase.from("recitations").update({ 
-    //   transcription: transcribedText, 
-    //   transcription_status: "completed", // Assuming you add this column
-    //   transcription_date: new Date().toISOString() 
-    // }).eq("id", recitationId);
+    // **FIX**: Update recitation table with transcription details
+    await supabase.from("recitations").update({ 
+      transcription: transcribedText, 
+      transcription_status: "completed",
+      transcription_date: new Date().toISOString() 
+    }).eq("id", recitationId);
 
     return NextResponse.json({ success: true, feedback });
 
