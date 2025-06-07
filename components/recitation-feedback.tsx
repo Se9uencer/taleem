@@ -21,13 +21,13 @@ export function RecitationFeedback({ recitationId }: RecitationFeedbackProps) {
         setLoading(true)
         const supabase = createClientComponentClient()
 
+        // FIX: Removed the non-existent 'processing_status' column from the select query
         const { data, error } = await supabase
           .from("recitations")
           .select(`
             id,
             audio_url,
             submitted_at,
-            processing_status,
             feedback (
               id,
               accuracy,

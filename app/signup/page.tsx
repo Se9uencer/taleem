@@ -3,12 +3,14 @@
 import "../auth-styles.css"
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { TaleemLogo } from "@/components/taleem-logo"
 import { createClientComponentClient } from "@/lib/supabase/client"
 import { supabaseConfig } from "@/lib/config"
+import { Card, CardContent } from "@/components/ui/card"
+
 
 export default function SignupPage() {
   const [email, setEmail] = useState("")
@@ -23,22 +25,6 @@ export default function SignupPage() {
   const [error, setError] = useState<string | null>(null)
   const [debugInfo, setDebugInfo] = useState<string[]>([])
   const router = useRouter()
-
-  // Force light mode on this page
-  useEffect(() => {
-    // Force light mode styling
-    document.body.style.backgroundColor = "#f9fafb" // bg-gray-50
-    document.body.style.color = "#111827" // text-gray-900
-
-    // Remove any theme classes that might override our styles
-    document.documentElement.classList.remove("dark")
-
-    // Clean up when component unmounts
-    return () => {
-      document.body.style.backgroundColor = ""
-      document.body.style.color = ""
-    }
-  }, [])
 
   const addDebugInfo = (info: string) => {
     console.log(info)
@@ -226,7 +212,7 @@ export default function SignupPage() {
       addDebugInfo("Waiting for database triggers to run...")
       await new Promise((resolve) => setTimeout(resolve, 1000))
 
-      // Verify and ensure profile exists with correct role
+      // Verify and ensure profile exists
       const userData = {
         email: normalizedEmail,
         firstName: firstName.trim(),
@@ -279,209 +265,207 @@ export default function SignupPage() {
 
   return (
     <div
-      className="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8 bg-gray-50 auth-page"
-      style={{ backgroundColor: "#f9fafb", color: "#111827" }}
+      className="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8 auth-page"
     >
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <TaleemLogo className="h-12 w-auto mx-auto text-purple-600" />
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">Create your account</h2>
-        <p className="mt-2 text-center text-sm text-gray-600">
+        <h2 className="mt-6 text-center text-3xl font-extrabold">Create your account</h2>
+        <p className="mt-2 text-center text-sm">
           Or{" "}
-          <Link href="/login" className="font-medium text-purple-600 hover:text-purple-500">
+          <Link href="/login" className="font-medium">
             sign in to your existing account
           </Link>
         </p>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div
-          className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10"
-          style={{ backgroundColor: "white", color: "#111827" }}
-        >
-          {error && (
-            <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-md">
-              <p>{error}</p>
-            </div>
-          )}
+        <Card className="shadow sm:rounded-lg">
+            <CardContent className="py-8 px-4 sm:px-10">
+                {error && (
+                    <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-md">
+                    <p>{error}</p>
+                    </div>
+                )}
 
-          <form className="space-y-6" onSubmit={handleSignup}>
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-              <div>
-                <label htmlFor="firstName" className="block text-sm font-medium text-gray-700">
-                  First Name
-                </label>
-                <div className="mt-1">
-                  <input
-                    id="firstName"
-                    name="firstName"
-                    type="text"
-                    required
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                    placeholder="Ahmed"
-                    className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm"
-                  />
-                </div>
-              </div>
+                <form className="space-y-6" onSubmit={handleSignup}>
+                    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                    <div>
+                        <label htmlFor="firstName" className="block text-sm font-medium">
+                        First Name
+                        </label>
+                        <div className="mt-1">
+                        <input
+                            id="firstName"
+                            name="firstName"
+                            type="text"
+                            required
+                            value={firstName}
+                            onChange={(e) => setFirstName(e.target.value)}
+                            placeholder="Ahmed"
+                            className="appearance-none block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm"
+                        />
+                        </div>
+                    </div>
 
-              <div>
-                <label htmlFor="lastName" className="block text-sm font-medium text-gray-700">
-                  Last Name
-                </label>
-                <div className="mt-1">
-                  <input
-                    id="lastName"
-                    name="lastName"
-                    type="text"
-                    required
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                    placeholder="Khan"
-                    className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm"
-                  />
-                </div>
-              </div>
-            </div>
+                    <div>
+                        <label htmlFor="lastName" className="block text-sm font-medium">
+                        Last Name
+                        </label>
+                        <div className="mt-1">
+                        <input
+                            id="lastName"
+                            name="lastName"
+                            type="text"
+                            required
+                            value={lastName}
+                            onChange={(e) => setLastName(e.target.value)}
+                            placeholder="Khan"
+                            className="appearance-none block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm"
+                        />
+                        </div>
+                    </div>
+                    </div>
 
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                Email address
-              </label>
-              <div className="mt-1">
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="ahmed.khan@example.com"
-                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm"
-                />
-              </div>
-            </div>
+                    <div>
+                    <label htmlFor="email" className="block text-sm font-medium">
+                        Email address
+                    </label>
+                    <div className="mt-1">
+                        <input
+                        id="email"
+                        name="email"
+                        type="email"
+                        autoComplete="email"
+                        required
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="ahmed.khan@example.com"
+                        className="appearance-none block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm"
+                        />
+                    </div>
+                    </div>
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                Password
-              </label>
-              <div className="mt-1">
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autoComplete="new-password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm"
-                />
-              </div>
-            </div>
+                    <div>
+                    <label htmlFor="password" className="block text-sm font-medium">
+                        Password
+                    </label>
+                    <div className="mt-1">
+                        <input
+                        id="password"
+                        name="password"
+                        type="password"
+                        autoComplete="new-password"
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="appearance-none block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm"
+                        />
+                    </div>
+                    </div>
 
-            <div>
-              <label htmlFor="role" className="block text-sm font-medium text-gray-700">
-                I am a
-              </label>
-              <div className="mt-1">
-                <select
-                  id="role"
-                  name="role"
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm"
-                >
-                  <option value="student">Student</option>
-                  <option value="teacher">Teacher</option>
-                  <option value="parent">Parent</option>
-                </select>
-              </div>
-            </div>
+                    <div>
+                    <label htmlFor="role" className="block text-sm font-medium">
+                        I am a
+                    </label>
+                    <div className="mt-1">
+                        <select
+                        id="role"
+                        name="role"
+                        value={role}
+                        onChange={(e) => setRole(e.target.value)}
+                        className="appearance-none block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm"
+                        >
+                        <option value="student">Student</option>
+                        <option value="teacher">Teacher</option>
+                        <option value="parent">Parent</option>
+                        </select>
+                    </div>
+                    </div>
 
-            {role === "student" && (
-              <>
-                <div>
-                  <label htmlFor="grade" className="block text-sm font-medium text-gray-700">
-                    Grade
-                  </label>
-                  <div className="mt-1">
-                    <select
-                      id="grade"
-                      name="grade"
-                      value={grade}
-                      onChange={(e) => setGrade(e.target.value)}
-                      className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm"
+                    {role === "student" && (
+                    <>
+                        <div>
+                        <label htmlFor="grade" className="block text-sm font-medium">
+                            Grade
+                        </label>
+                        <div className="mt-1">
+                            <select
+                            id="grade"
+                            name="grade"
+                            value={grade}
+                            onChange={(e) => setGrade(e.target.value)}
+                            className="appearance-none block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm"
+                            >
+                            <option value="">Select Grade</option>
+                            <option value="Pre-K">Pre-K</option>
+                            <option value="Kindergarten">Kindergarten</option>
+                            <option value="1st Grade">1st Grade</option>
+                            <option value="2nd Grade">2nd Grade</option>
+                            <option value="3rd Grade">3rd Grade</option>
+                            <option value="4th Grade">4th Grade</option>
+                            <option value="5th Grade">5th Grade</option>
+                            <option value="6th Grade">6th Grade</option>
+                            <option value="7th Grade">7th Grade</option>
+                            <option value="8th Grade">8th Grade</option>
+                            <option value="9th Grade">9th Grade</option>
+                            <option value="10th Grade">10th Grade</option>
+                            <option value="11th Grade">11th Grade</option>
+                            <option value="12th Grade">12th Grade</option>
+                            <option value="College">College</option>
+                            <option value="Adult">Adult</option>
+                            </select>
+                        </div>
+                        </div>
+
+                        <div>
+                        <label htmlFor="parentEmail" className="block text-sm font-medium">
+                            Parent Email (Optional)
+                        </label>
+                        <div className="mt-1">
+                            <input
+                            id="parentEmail"
+                            name="parentEmail"
+                            type="email"
+                            value={parentEmail}
+                            onChange={(e) => setParentEmail(e.target.value)}
+                            placeholder="parent@example.com"
+                            className="appearance-none block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm"
+                            />
+                        </div>
+                        </div>
+
+                        <div>
+                        <label htmlFor="parentPhone" className="block text-sm font-medium">
+                            Parent Phone (Optional)
+                        </label>
+                        <div className="mt-1">
+                            <input
+                            id="parentPhone"
+                            name="parentPhone"
+                            type="tel"
+                            value={parentPhone}
+                            onChange={(e) => setParentPhone(e.target.value)}
+                            placeholder="(123) 456-7890"
+                            className="appearance-none block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm"
+                            />
+                        </div>
+                        </div>
+                    </>
+                    )}
+
+                    <div>
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50"
                     >
-                      <option value="">Select Grade</option>
-                      <option value="Pre-K">Pre-K</option>
-                      <option value="Kindergarten">Kindergarten</option>
-                      <option value="1st Grade">1st Grade</option>
-                      <option value="2nd Grade">2nd Grade</option>
-                      <option value="3rd Grade">3rd Grade</option>
-                      <option value="4th Grade">4th Grade</option>
-                      <option value="5th Grade">5th Grade</option>
-                      <option value="6th Grade">6th Grade</option>
-                      <option value="7th Grade">7th Grade</option>
-                      <option value="8th Grade">8th Grade</option>
-                      <option value="9th Grade">9th Grade</option>
-                      <option value="10th Grade">10th Grade</option>
-                      <option value="11th Grade">11th Grade</option>
-                      <option value="12th Grade">12th Grade</option>
-                      <option value="College">College</option>
-                      <option value="Adult">Adult</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label htmlFor="parentEmail" className="block text-sm font-medium text-gray-700">
-                    Parent Email (Optional)
-                  </label>
-                  <div className="mt-1">
-                    <input
-                      id="parentEmail"
-                      name="parentEmail"
-                      type="email"
-                      value={parentEmail}
-                      onChange={(e) => setParentEmail(e.target.value)}
-                      placeholder="parent@example.com"
-                      className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label htmlFor="parentPhone" className="block text-sm font-medium text-gray-700">
-                    Parent Phone (Optional)
-                  </label>
-                  <div className="mt-1">
-                    <input
-                      id="parentPhone"
-                      name="parentPhone"
-                      type="tel"
-                      value={parentPhone}
-                      onChange={(e) => setParentPhone(e.target.value)}
-                      placeholder="(123) 456-7890"
-                      className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm"
-                    />
-                  </div>
-                </div>
-              </>
-            )}
-
-            <div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50"
-              >
-                {loading ? "Creating account..." : "Sign up"}
-              </button>
-            </div>
-          </form>
-        </div>
+                        {loading ? "Creating account..." : "Sign up"}
+                    </button>
+                    </div>
+                </form>
+            </CardContent>
+        </Card>
       </div>
     </div>
   )

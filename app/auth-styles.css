@@ -1,50 +1,31 @@
 /* Auth pages light mode styles */
 .auth-page {
   background-color: #f9fafb !important; /* bg-gray-50 */
-  color: #111827 !important; /* text-gray-900 */
 }
 
-.auth-page h1,
-.auth-page h2,
-.auth-page h3,
-.auth-page h4,
-.auth-page h5,
-.auth-page h6,
-.auth-page label {
-  color: #111827 !important; /* text-gray-900 */
-}
-
-.auth-page p,
-.auth-page span {
-  color: #374151 !important; /* text-gray-700 */
-}
-
-.auth-page .text-muted {
-  color: #6b7280 !important; /* text-gray-500 */
-}
-
+/* Force the form card to have a white background */
 .auth-page .card {
   background-color: white !important;
-  border-color: #e5e7eb !important; /* border-gray-200 */
+  color: #111827 !important; /* Dark gray text for content */
 }
 
-.auth-page .btn-primary {
-  background-color: #8b5cf6 !important; /* bg-purple-600 */
-  color: white !important;
+/* Force the main title (h2) to be black */
+.auth-page h2 {
+  color: #000000 !important; /* Black */
 }
 
-.auth-page .btn-primary:hover {
-  background-color: #7c3aed !important; /* bg-purple-700 */
+/* General text styling for paragraphs and links on the page */
+.auth-page p {
+  color: #374151; /* text-gray-700 */
 }
-
 .auth-page a {
-  color: #8b5cf6 !important; /* text-purple-600 */
+  color: #8b5cf6; /* text-purple-600 */
 }
-
 .auth-page a:hover {
-  color: #7c3aed !important; /* text-purple-700 */
+  color: #7c3aed; /* text-purple-700 */
 }
 
+/* Input field styling to ensure they are light */
 .auth-page input,
 .auth-page select {
   background-color: white !important;
@@ -52,12 +33,10 @@
   color: #111827 !important; /* text-gray-900 */
 }
 
-.auth-page input:focus,
-.auth-page select:focus {
-  border-color: #8b5cf6 !important; /* border-purple-500 */
-  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2) !important; /* ring-purple-500 */
+.auth-page label {
+    color: #374151 !important;
 }
 
-.auth-page ::placeholder {
-  color: #9ca3af !important; /* placeholder-gray-400 */
+.auth-page input::placeholder {
+    color: #9ca3af !important;
 }

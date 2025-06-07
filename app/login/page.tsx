@@ -29,22 +29,6 @@ export default function LoginPage() {
   const [resendingEmail, setResendingEmail] = useState(false)
   const [resendSuccess, setResendSuccess] = useState(false)
 
-  // Force light mode on this page
-  useEffect(() => {
-    // Force light mode styling
-    document.body.style.backgroundColor = "#f9fafb" // bg-gray-50
-    document.body.style.color = "#111827" // text-gray-900
-
-    // Remove any theme classes that might override our styles
-    document.documentElement.classList.remove("dark")
-
-    // Clean up when component unmounts
-    return () => {
-      document.body.style.backgroundColor = ""
-      document.body.style.color = ""
-    }
-  }, [])
-
   useEffect(() => {
     // Check for message in URL
     const urlMessage = searchParams.get("message")
@@ -249,12 +233,11 @@ export default function LoginPage() {
   return (
     <div
       className="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8 bg-gray-50 auth-page"
-      style={{ backgroundColor: "#f9fafb", color: "#111827" }}
     >
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <TaleemLogo className="h-12 w-auto mx-auto text-purple-600" />
-        <h2 className="mt-6 text-center text-3xl font-bold text-gray-900">Sign in to your account</h2>
-        <p className="mt-2 text-center text-sm text-gray-600">
+        <h2 className="mt-6 text-center text-3xl font-bold">Sign in to your account</h2>
+        <p className="mt-2 text-center text-sm">
           Or{" "}
           <Link href="/signup" className="font-medium text-purple-600 hover:text-purple-500">
             create a new account
@@ -263,7 +246,7 @@ export default function LoginPage() {
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <Card className="border border-gray-200 shadow-sm" style={{ backgroundColor: "white" }}>
+        <Card className="border border-gray-200 shadow-sm">
           <CardContent className="p-6">
             {message && (
               <div className="mb-6 p-3 bg-green-50 text-green-700 rounded-md flex items-start">
@@ -281,7 +264,7 @@ export default function LoginPage() {
 
             <form className="space-y-6" onSubmit={handleLogin}>
               <div>
-                <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="email" className="block text-sm font-medium mb-1">
                   Email address
                 </label>
                 <Input
@@ -298,7 +281,7 @@ export default function LoginPage() {
               </div>
 
               <div>
-                <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="password" className="block text-sm font-medium mb-1">
                   Password
                 </label>
                 <Input
