@@ -37,3 +37,12 @@ export const createServerClient = async () => {
     throw new Error("Failed to initialize Supabase server client. Please check your configuration.")
   }
 }
+
+// Create a server client using the service role key. This client bypasses RLS
+// policies and should only be used for trusted backend operations.
+export const createServiceRoleClient = () => {
+  if (!supabaseConfig.url || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('Missing Supabase service role configuration')
+  }
+  return createClient(supabaseConfig.url, process.env.SUPABASE_SERVICE_ROLE_KEY)
+}
