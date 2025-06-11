@@ -321,23 +321,23 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
 
       if (recitationError) throw recitationError;
       
-      // FIX: The API call is now made BEFORE telling the parent page to switch components.
       const formData = new FormData();
       formData.append("file", audioBlob);
       formData.append("recitationId", recitationData.id);
 
-      // Trigger the AI processing
+      // 1. Make the API call to start the AI processing
       await fetch("/api/speech-recognition", {
         method: "POST",
         body: formData,
       });
 
+      // 2. Show a success message
       toast({
         title: "Recitation Submitted",
         description: `Your recitation is now being processed by the AI.`,
       })
 
-      // NOW, update the parent component's state as the very last step.
+      // 3. Update the UI as the very last step
       onRecitationSubmitted(recitationData.id)
 
     } catch (err: any) {
