@@ -1,6 +1,6 @@
 // File: app/api/speech-recognition/route.ts
 import { NextResponse } from "next/server"
-import { createServerClient } from "@/lib/supabase/server"
+import { createServiceRoleClient } from "@/lib/supabase/server"
 import { normalizeArabicText, calculateSimilarity } from "@/lib/arabic-utils"
 
 const HF_API_TOKEN = process.env.HF_API_TOKEN;
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
 
   let recitationId: string;
   let audioBlob: Blob;
-  const supabase = await createServerClient();
+  const supabase = await createServiceRoleClient();
 
   try {
     const formData = await request.formData();
@@ -98,21 +98,23 @@ export async function POST(request: Request) {
         notes = "Transcription complete. Accuracy could not be calculated as no target text was found for the assignment.";
     }
 
-    await supabase.from("feedback").insert({
+    const { error: feedbackError } = await supabase.from("feedback").insert({
         recitation_id: recitationId,
         accuracy: accuracy,
         notes: notes,
         expected_text: expectedQuranText || `Reference: Surah ${recitation.assignments?.surah_name}, Ayahs ${recitation.assignments?.start_ayah}-${recitation.assignments?.end_ayah}`,
         generated_at: new Date().toISOString(),
     });
+    if (feedbackError) throw feedbackError;
 
     // FINAL STEP: Mark as completed
-    await supabase.from("recitations").update({
+    const { error: updateError } = await supabase.from("recitations").update({
         transcription: transcribedText,
         transcription_status: "completed",
         transcription_date: new Date().toISOString(),
         transcription_error: null // Clear the error log
     }).eq("id", recitationId);
+    if (updateError) throw updateError;
 
     console.log(`[Success] Successfully processed recitation ${recitationId}`);
     return NextResponse.json({ success: true });
