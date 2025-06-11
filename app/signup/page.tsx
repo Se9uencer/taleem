@@ -265,7 +265,7 @@ export default function SignupPage() {
 
   return (
     <div
-      className="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8 auth-page"
+      className="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8 bg-white text-black dark:bg-white dark:text-black auth-page"
     >
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <TaleemLogo className="h-12 w-auto mx-auto text-purple-600" />

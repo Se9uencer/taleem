@@ -1,42 +1,52 @@
-/* Auth pages light mode styles */
-.auth-page {
+/* Auth pages light mode styles - Force light theme even in dark mode */
+.auth-page,
+html.dark .auth-page {
   background-color: #f9fafb !important; /* bg-gray-50 */
 }
 
 /* Force the form card to have a white background */
-.auth-page .card {
+.auth-page .card,
+html.dark .auth-page .card {
   background-color: white !important;
   color: #111827 !important; /* Dark gray text for content */
 }
 
 /* Force the main title (h2) to be black */
-.auth-page h2 {
+.auth-page h2,
+html.dark .auth-page h2 {
   color: #000000 !important; /* Black */
 }
 
 /* General text styling for paragraphs and links on the page */
-.auth-page p {
+.auth-page p,
+html.dark .auth-page p {
   color: #374151; /* text-gray-700 */
 }
-.auth-page a {
+.auth-page a,
+html.dark .auth-page a {
   color: #8b5cf6; /* text-purple-600 */
 }
-.auth-page a:hover {
+.auth-page a:hover,
+html.dark .auth-page a:hover {
   color: #7c3aed; /* text-purple-700 */
 }
 
 /* Input field styling to ensure they are light */
 .auth-page input,
-.auth-page select {
+.auth-page select,
+html.dark .auth-page input,
+html.dark .auth-page select {
   background-color: white !important;
   border-color: #d1d5db !important; /* border-gray-300 */
   color: #111827 !important; /* text-gray-900 */
 }
 
-.auth-page label {
+.auth-page label,
+html.dark .auth-page label {
     color: #374151 !important;
 }
 
-.auth-page input::placeholder {
+.auth-page input::placeholder,
+html.dark .auth-page input::placeholder {
     color: #9ca3af !important;
 }

@@ -1,12 +1,13 @@
 "use client"
 
+import { Button } from "@/components/ui/button"
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { createClientComponentClient } from "@/lib/supabase/client"
 import Link from "next/link"
 import { TaleemLogo } from "@/components/taleem-logo"
 import { AlertCircle } from "lucide-react"
-import Recorder from "@/components/recorder"
+import { RecitationRecorder } from "@/components/recitation-recorder"
 import { RecitationFeedback } from "@/components/recitation-feedback"
 
 export default function NewRecitationPage() {
@@ -26,7 +27,7 @@ export default function NewRecitationPage() {
 
     const loadData = async () => {
       try {
-        // Check if user is authenticated
+        setLoading(true);
         const { data: sessionData } = await supabase.auth.getSession()
 
         if (!sessionData.session) {
@@ -36,7 +37,6 @@ export default function NewRecitationPage() {
 
         setUser(sessionData.session.user)
 
-        // Get user profile to check if student
         const { data: profileData, error: profileError } = await supabase
           .from("profiles")
           .select("*")
@@ -49,13 +49,11 @@ export default function NewRecitationPage() {
           return
         }
 
-        // Only students can submit recitations
         if (profileData.role !== "student") {
           router.push("/dashboard")
           return
         }
 
-        // Check if assignment exists and student is enrolled in the class
         if (!assignmentId) {
           setError("No assignment specified")
           setLoading(false)
@@ -73,8 +71,7 @@ export default function NewRecitationPage() {
           setLoading(false)
           return
         }
-
-        // Check if student is enrolled in the class
+        
         const { data: enrollment, error: enrollmentError } = await supabase
           .from("class_students")
           .select("*")
@@ -88,7 +85,6 @@ export default function NewRecitationPage() {
           return
         }
 
-        // Check if assignment is assigned to this student
         const { data: assignmentStudent, error: assignmentStudentError } = await supabase
           .from("assignment_students")
           .select("*")
@@ -102,7 +98,6 @@ export default function NewRecitationPage() {
           return
         }
 
-        // Check if student has already submitted this assignment
         const { data: existingSubmissions, error: submissionsError } = await supabase
           .from("recitations")
           .select("*")
@@ -118,10 +113,11 @@ export default function NewRecitationPage() {
         }
 
         setAssignment(assignmentData)
-        setLoading(false)
-      } catch (err) {
+        
+      } catch (err: any) {
         console.error("Error loading data:", err)
         setError("An unexpected error occurred")
+      } finally {
         setLoading(false)
       }
     }
@@ -134,7 +130,11 @@ export default function NewRecitationPage() {
   }
 
   const generateAssignmentTitle = (surahName: string, startAyah: number, endAyah: number) => {
-    return `${surahName}, Ayah ${startAyah}-${endAyah}`
+    const surahNameOnly = surahName.replace(/^\d+\.\s+/, "").split(" (")[0];
+    if (startAyah === endAyah) {
+        return `${surahNameOnly} - Ayah ${startAyah}`;
+    }
+    return `${surahNameOnly} - Ayahs ${startAyah}-${endAyah}`;
   }
 
   if (loading) {
@@ -145,7 +145,7 @@ export default function NewRecitationPage() {
     )
   }
 
-  if (error && !assignment) {
+  if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="bg-red-50 text-red-600 p-6 rounded-lg max-w-md w-full">
@@ -226,39 +226,26 @@ export default function NewRecitationPage() {
             </div>
           )}
 
-          {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-md text-sm mb-4">
-              {error}
-            </div>
-          )}
-
           <div className="space-y-6">
             {submittedRecitationId ? (
               <RecitationFeedback recitationId={submittedRecitationId} />
             ) : (
-              <>
-                {assignment && new Date() > new Date(assignment.due_date) && (
-                  <div className="bg-yellow-100 text-yellow-800 p-3 rounded mb-4 text-center">
-                    <strong>Warning:</strong> This assignment is overdue. Your submission will be marked as late.
-                  </div>
-                )}
-                <Recorder
+              // This is the updated section
+              assignment && user && (
+                <RecitationRecorder
                   assignmentId={assignmentId!}
                   studentId={user.id}
-                  dueDate={assignment?.due_date}
                   onRecitationSubmitted={handleRecitationSubmitted}
+                  assignmentDueDate={assignment.due_date}
                 />
-              </>
+              )
             )}
 
             {submittedRecitationId && (
               <div className="flex justify-center">
-                <button
-                  onClick={() => setSubmittedRecitationId(null)}
-                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
-                >
+                <Button onClick={() => setSubmittedRecitationId(null)} variant="outline">
                   Submit Another Recitation
-                </button>
+                </Button>
               </div>
             )}
           </div>

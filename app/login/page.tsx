@@ -106,7 +106,7 @@ export default function LoginPage() {
       }
 
       setResendSuccess(true)
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error resending confirmation email:", error)
       setError(`Failed to resend confirmation email: ${error.message}`)
     } finally {
@@ -164,7 +164,7 @@ export default function LoginPage() {
               await new Promise((resolve) => setTimeout(resolve, 1000))
             }
           }
-        } catch (err) {
+        } catch (err: any) {
           addDebugInfo(`Exception during auth attempt ${authAttempt}: ${err.message}`)
           // Wait a bit before retrying
           if (authAttempt < maxAuthAttempts) {
@@ -216,7 +216,7 @@ export default function LoginPage() {
             window.location.href = "/dashboard"
           }
         }, 1500)
-      } catch (routerError) {
+      } catch (routerError: any) {
         addDebugInfo(`Router error: ${routerError}`)
         // Method 3: Direct location change if all else fails
         window.location.href = "/dashboard"
@@ -232,7 +232,7 @@ export default function LoginPage() {
 
   return (
     <div
-      className="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8 bg-gray-50 auth-page"
+      className="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8 bg-white text-black dark:bg-white dark:text-black auth-page"
     >
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <TaleemLogo className="h-12 w-auto mx-auto text-purple-600" />
