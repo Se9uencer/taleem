@@ -283,7 +283,6 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
     setIsUploading(true)
     setError(null)
     const submissionTime = new Date();
-    // FIX: Handle optional assignmentDueDate gracefully
     const isLate = assignmentDueDate ? isPastDuePST(assignmentDueDate, submissionTime.toISOString()) : false;
 
     try {
@@ -322,10 +321,12 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
 
       if (recitationError) throw recitationError;
       
+      // FIX: The API call is now made BEFORE telling the parent page to switch components.
       const formData = new FormData();
       formData.append("file", audioBlob);
       formData.append("recitationId", recitationData.id);
 
+      // Trigger the AI processing
       await fetch("/api/speech-recognition", {
         method: "POST",
         body: formData,
@@ -335,7 +336,10 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
         title: "Recitation Submitted",
         description: `Your recitation is now being processed by the AI.`,
       })
+
+      // NOW, update the parent component's state as the very last step.
       onRecitationSubmitted(recitationData.id)
+
     } catch (err: any) {
       setError(err.message || "Failed to submit recitation")
       setIsUploading(false) 
