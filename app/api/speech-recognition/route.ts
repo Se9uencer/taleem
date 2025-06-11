@@ -26,7 +26,7 @@ export async function POST(request: Request) {
 
   let recitationId: string;
   let audioBlob: Blob;
-  const supabase = createServiceRoleClient();
+  const supabase = await createServiceRoleClient();
 
   try {
     const formData = await request.formData();

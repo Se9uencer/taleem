@@ -40,7 +40,7 @@ export const createServerClient = async () => {
 
 // Create a server client using the service role key. This client bypasses RLS
 // policies and should only be used for trusted backend operations.
-export const createServiceRoleClient = () => {
+export const createServiceRoleClient = async () => {
   if (!supabaseConfig.url || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     throw new Error('Missing Supabase service role configuration')
   }
