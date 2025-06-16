@@ -4,7 +4,7 @@ import { createServiceRoleClient } from "@/lib/supabase/server"
 import { normalizeArabicText, calculateSimilarity } from "@/lib/arabic-utils"
 
 const HF_API_TOKEN = process.env.HF_API_TOKEN;
-const TARTEEL_MODEL_URL = "https://api-inference.huggingface.co/models/tarteel-ai/whisper-base-ar-quran";
+const TARTEEL_MODEL_URL = "https://zycp53ggyojvhyn9.us-east-1.aws.endpoints.huggingface.cloud";
 
 // Helper function to update the error status in the database
 async function updateErrorStatus(supabase: any, recitationId: string, message: string) {
@@ -87,7 +87,8 @@ export async function POST(request: Request) {
 
     let accuracy = 0.0;
     let notes = "Recitation transcribed.";
-    const expectedQuranText = recitation.assignments?.target_text;
+    const assignment = Array.isArray(recitation.assignments) ? recitation.assignments[0] : recitation.assignments;
+    const expectedQuranText = assignment?.target_text;
 
     if (expectedQuranText) {
       const normalizedTranscribedText = normalizeArabicText(transcribedText);
@@ -102,7 +103,7 @@ export async function POST(request: Request) {
         recitation_id: recitationId,
         accuracy: accuracy,
         notes: notes,
-        expected_text: expectedQuranText || `Reference: Surah ${recitation.assignments?.surah_name}, Ayahs ${recitation.assignments?.start_ayah}-${recitation.assignments?.end_ayah}`,
+        expected_text: expectedQuranText || `Reference: Surah ${assignment?.surah_name}, Ayahs ${assignment?.start_ayah}-${assignment?.end_ayah}`,
         generated_at: new Date().toISOString(),
     });
     if (feedbackError) throw feedbackError;
