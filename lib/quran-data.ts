@@ -1,5 +1,7 @@
+import type { Surah } from "@/types";
+
 // Surah information with name and number of ayahs
-export const surahData = [
+export const surahData: Surah[] = [
   { number: 1, name: "1. Al-Fatihah (The Opening)", ayahs: 7 },
   { number: 2, name: "2. Al-Baqarah (The Cow)", ayahs: 286 },
   { number: 3, name: "3. Aal-Imran (The Family of Imran)", ayahs: 200 },
@@ -118,8 +120,8 @@ export const surahData = [
 
 // Helper function to get the number of ayahs for a given surah
 export function getAyahCount(surahName: string): number {
-  const surah = surahData.find((s) => s.name === surahName)
-  return surah ? surah.ayahs : 0
+  const surah: Surah | undefined = surahData.find((s: Surah) => s.name === surahName);
+  return surah ? surah.ayahs : 0;
 }
 
 // Helper function to generate a title from surah and ayah range

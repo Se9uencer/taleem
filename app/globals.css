@@ -258,19 +258,19 @@ body {
   }
 
   .academic-badge-primary {
-    @apply bg-primary/20 text-primary dark:bg-primary/30 dark:text-primary-foreground;
+    @apply bg-primary/20 text-primary;
   }
 
   .academic-badge-success {
-    @apply bg-green-100 text-green-800 dark:bg-green-900/60 dark:text-green-200;
+    @apply bg-green-100 text-green-800;
   }
 
   .academic-badge-warning {
-    @apply bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200;
+    @apply bg-amber-100 text-amber-800;
   }
 
   .academic-badge-danger {
-    @apply bg-red-100 text-red-800 dark:bg-red-900/60 dark:text-red-200;
+    @apply bg-red-100 text-red-800;
   }
 
   .academic-table {

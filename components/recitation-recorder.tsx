@@ -18,6 +18,13 @@ interface RecitationRecorderProps {
   assignmentDueDate?: string; 
 }
 
+// Helper to generate recitation storage path (must match backend)
+function getRecitationStoragePath({ userId, assignmentId, fileType }: { userId: string, assignmentId: string, fileType: string }) {
+  const fileExtension = fileType.split("/")[1]?.split(";")[0] || "webm";
+  const timestamp = Date.now();
+  return `recitations/${userId}/${assignmentId}/${timestamp}.${fileExtension}`;
+}
+
 export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmitted, assignmentDueDate }: RecitationRecorderProps) {
   const [isRecording, setIsRecording] = useState(false)
   const [recordingDuration, setRecordingDuration] = useState(0); 
@@ -124,9 +131,8 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
 
       recorder.onstop = () => processRecording();
       recorder.onerror = (event: Event) => {
-        const mediaErrorEvent = event as MediaRecorderErrorEvent;
-        setError(`Recording system error: ${mediaErrorEvent.error?.name} - ${mediaErrorEvent.error?.message || "Unknown recording error"}`)
-        resetRecordingStates(); 
+        setError("Recording system error. Please try again.");
+        resetRecordingStates();
       }
       
       recorder.start(250);
@@ -277,28 +283,54 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
   const handleSubmit = async () => {
     if (!audioBlob || processedAudioDuration === null || processedAudioDuration < 0.5) {
       setError("A valid audio recording is required for submission.");
-      return
+      return;
     }
 
-    setIsUploading(true)
-    setError(null)
+    setIsUploading(true);
+    setError(null);
     const submissionTime = new Date();
     const isLate = assignmentDueDate ? isPastDuePST(assignmentDueDate, submissionTime.toISOString()) : false;
 
     try {
+      // 1. Get the user's access token
       const supabase = createClientComponentClient();
-      let fileExtension = audioBlob.type.split('/')[1] || "webm";
-      const fileName = `recitations/${studentId}/${assignmentId}/${Date.now()}.${fileExtension}`
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData.session) throw new Error("Not authenticated");
+      const accessToken = sessionData.session.access_token;
 
-      const { error: uploadError } = await supabase.storage.from("recitations").upload(fileName, audioBlob, {
-        contentType: audioBlob.type,
-        upsert: false, 
+      // 2. Prepare file extension and base file name, stripping codec info
+      const fileExtension = audioBlob.type.split("/")[1]?.split(";")[0] || "webm";
+      const baseFileName = (audioBlob as any).name
+        ? (audioBlob as any).name.split(";")[0].trim()
+        : `${Date.now()}.${fileExtension}`;
+      const storagePath = `recitations/${studentId}/${assignmentId}/${baseFileName}`;
+
+      // 3. Request a signed upload URL from the API
+      const uploadUrlRes = await fetch("/api/speech-recognition", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ assignmentId, studentId, fileType: audioBlob.type, fileNameFromClient: baseFileName }),
       });
+      if (!uploadUrlRes.ok) {
+        const err = await uploadUrlRes.json();
+        setError(typeof err.error === "string" ? err.error : "Failed to get upload URL");
+        throw new Error(typeof err.error === "string" ? err.error : "Failed to get upload URL");
+      }
+      const { url: signedUrl } = await uploadUrlRes.json();
 
-      if (uploadError) throw uploadError;
+      // 4. Upload the audio file to the signed URL
+      const uploadRes = await fetch(signedUrl, {
+        method: "PUT",
+        headers: { "Content-Type": audioBlob.type },
+        body: audioBlob,
+      });
+      if (!uploadRes.ok) throw new Error("Failed to upload audio file");
 
-      const { data: urlData } = supabase.storage.from("recitations").getPublicUrl(fileName)
-      
+      // 5. Insert recitation record in DB (audio_url = storagePath)
+      // Mark previous recitations as not latest
       await supabase
         .from("recitations")
         .update({ is_latest: false })
@@ -310,46 +342,42 @@ export function RecitationRecorder({ assignmentId, studentId, onRecitationSubmit
         .insert({
           assignment_id: assignmentId,
           student_id: studentId,
-          audio_url: urlData.publicUrl,
+          audio_url: storagePath, // Only the storage path, not a public URL
           submitted_at: submissionTime.toISOString(),
           is_latest: true,
           transcription_status: "pending",
           is_late_submission: isLate,
         })
         .select()
-        .single()
-
+        .single();
       if (recitationError) throw recitationError;
-      
-      const formData = new FormData();
-      formData.append("file", audioBlob);
-      formData.append("recitationId", recitationData.id);
 
-      // 1. Make the API call to start the AI processing
+      // 6. Trigger ML processing (API call with recitationId, no file upload)
+      const formData = new FormData();
+      formData.append("recitationId", String(recitationData.id));
       await fetch("/api/speech-recognition", {
         method: "POST",
         body: formData,
       });
 
-      // 2. Show a success message
       toast({
         title: "Recitation Submitted",
         description: `Your recitation is now being processed by the AI.`,
-      })
-
-      // 3. Update the UI as the very last step
-      onRecitationSubmitted(recitationData.id)
-
+      });
+      onRecitationSubmitted(recitationData.id);
     } catch (err: any) {
-      setError(err.message || "Failed to submit recitation")
-      setIsUploading(false) 
+      let errorMsg: string = "Failed to submit recitation";
+      if (typeof err === "string") errorMsg = err;
+      else if (err && typeof err.message === "string") errorMsg = err.message;
+      setError(errorMsg);
+      setIsUploading(false);
       toast({
         title: "Submission Failed",
-        description: err.message || "An unknown error occurred.",
+        description: errorMsg,
         variant: "destructive",
-      })
+      });
     }
-  }
+  };
   
   return (
     <Card className="w-full">

@@ -4,6 +4,8 @@ import { createClient } from "@supabase/supabase-js"
 import { cookies } from "next/headers"
 import { supabaseConfig } from "../config"
 
+console.log('SRK:', process.env.SUPABASE_SERVICE_ROLE_KEY?.slice(0,8))
+
 // Change to async function to comply with Server Actions requirements
 export const createServerClient = async () => {
   try {

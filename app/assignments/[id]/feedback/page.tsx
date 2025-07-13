@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { BookOpen, Calendar, Clock, ArrowLeft, Headphones, BarChart2, FileText, AlertTriangle } from "lucide-react"
 import { formatDatePST } from "@/lib/date-utils"
+import { RecitationAudioPlayer } from "@/components/recitation-audio-player";
 
 export default function AssignmentFeedbackPage() {
   const [assignment, setAssignment] = useState<any>(null)
@@ -286,9 +287,11 @@ export default function AssignmentFeedbackPage() {
                   <Headphones className="h-6 w-6 text-primary" />
                 </div>
                 <div className="flex-1">
-                  <audio controls src={recitation.audio_url} className="w-full">
-                    Your browser does not support the audio element.
-                  </audio>
+                  {/* Always use a signed URL for Supabase Storage audio playback
+                      This ensures secure, time-limited access and prevents 404/errors from raw storage paths */}
+                  {recitation.audio_url && (
+                    <RecitationAudioPlayer storagePath={recitation.audio_url} className="w-full" />
+                  )}
                 </div>
               </div>
             </CardContent>

@@ -5,6 +5,7 @@ import { createClientComponentClient } from "@/lib/supabase/client"
 import { Card, CardContent } from "@/components/ui/card"
 import { AlertCircle, CheckCircle, Headphones } from "lucide-react"
 import { RecitationTranscription } from "./recitation-transcription"
+import { RecitationAudioPlayer } from "@/components/recitation-audio-player";
 
 interface RecitationFeedbackProps {
   recitationId: string
@@ -14,14 +15,13 @@ export function RecitationFeedback({ recitationId }: RecitationFeedbackProps) {
   const [recitation, setRecitation] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [signedUrl, setSignedUrl] = useState<string | null>(null)
 
   useEffect(() => {
     const loadRecitation = async () => {
       try {
         setLoading(true)
         const supabase = createClientComponentClient()
-
-        // FIX: Removed the non-existent 'processing_status' column from the select query
         const { data, error } = await supabase
           .from("recitations")
           .select(`
@@ -36,12 +36,17 @@ export function RecitationFeedback({ recitationId }: RecitationFeedbackProps) {
           `)
           .eq("id", recitationId)
           .single()
-
         if (error) {
           throw error
         }
-
         setRecitation(data)
+        // Fetch signed URL for playback
+        if (data?.audio_url) {
+          const { data: signedData } = await supabase.storage.from("recitations").createSignedUrl(data.audio_url, 60)
+          setSignedUrl(signedData?.signedUrl || null)
+        } else {
+          setSignedUrl(null)
+        }
       } catch (err: any) {
         console.error("Error loading recitation:", err)
         setError(err.message)
@@ -49,7 +54,6 @@ export function RecitationFeedback({ recitationId }: RecitationFeedbackProps) {
         setLoading(false)
       }
     }
-
     if (recitationId) {
       loadRecitation()
     }
@@ -95,9 +99,9 @@ export function RecitationFeedback({ recitationId }: RecitationFeedbackProps) {
               <Headphones className="h-5 w-5 text-purple-600 mr-2" />
               <h4 className="font-medium">Your Recording</h4>
             </div>
-            <audio controls src={recitation.audio_url} className="w-full mt-2">
-              Your browser does not support the audio element.
-            </audio>
+            {recitation.audio_url && (
+              <RecitationAudioPlayer storagePath={recitation.audio_url} className="w-full mt-2" />
+            )}
           </div>
 
           {recitation.feedback ? (

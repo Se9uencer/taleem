@@ -21,6 +21,7 @@ import {
   RefreshCw,
 } from "lucide-react"
 import { formatDatePST, isPastDuePST } from "@/lib/date-utils"
+import { RecitationAudioPlayer } from "@/components/recitation-audio-player";
 
 export default function AssignmentsPage() {
   const [profile, setProfile] = useState<any>(null)
@@ -264,21 +265,21 @@ export default function AssignmentsPage() {
     switch (status) {
       case "completed":
         return (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
             <CheckCircle className="w-3 h-3 mr-1" />
             Completed
           </span>
         )
       case "pending":
         return (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
             <Clock className="w-3 h-3 mr-1" />
             Pending
           </span>
         )
       case "overdue":
         return (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
             <AlertCircle className="w-3 h-3 mr-1" />
             Overdue
           </span>
@@ -343,9 +344,9 @@ export default function AssignmentsPage() {
         </div>
 
         {error && (
-          <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg mb-6">
-            <h3 className="text-red-800 dark:text-red-300 font-medium">Error Loading Assignments</h3>
-            <p className="text-red-700 dark:text-red-400">{error}</p>
+          <div className="bg-red-50 p-4 rounded-lg mb-6">
+            <h3 className="text-red-800 font-medium">Error Loading Assignments</h3>
+            <p className="text-red-700">{error}</p>
           </div>
         )}
 
@@ -471,9 +472,11 @@ export default function AssignmentsPage() {
                             </div>
                             <div className="flex-1">
                               <p className="text-sm text-foreground mb-1">Recitation Audio</p>
-                              <audio controls src={assignment.recitation.audio_url} className="w-full h-10 max-w-md">
-                                Your browser does not support the audio element.
-                              </audio>
+                              {/* Always use a signed URL for Supabase Storage audio playback
+                                This ensures secure, time-limited access and prevents 404/errors from raw storage paths */}
+                              {assignment.recitation?.audio_url && (
+                                <RecitationAudioPlayer storagePath={assignment.recitation.audio_url} className="w-full h-10 max-w-md" />
+                              )}
                             </div>
                           </div>
 

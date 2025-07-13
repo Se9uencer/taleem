@@ -6,6 +6,7 @@ import { formatDatePST } from "@/lib/date-utils"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AlertCircle, BookOpen, Calendar, CheckCircle, Clock, XCircle, School } from "lucide-react"
+import { RecitationAudioPlayer } from "@/components/recitation-audio-player";
 
 interface ChildProgressViewProps {
   childId: string
@@ -285,12 +286,10 @@ export function ChildProgressView({ childId }: ChildProgressViewProps) {
                           })}
                         </div>
 
-                        {assignment.latestRecitation.audio_url && (
-                          <div>
-                            <audio controls src={assignment.latestRecitation.audio_url} className="w-full h-10">
-                              Your browser does not support the audio element.
-                            </audio>
-                          </div>
+                        {/* Always use a signed URL for Supabase Storage audio playback
+                            This ensures secure, time-limited access and prevents 404/errors from raw storage paths */}
+                        {assignment.latestRecitation?.audio_url && (
+                          <RecitationAudioPlayer storagePath={assignment.latestRecitation.audio_url} className="w-full h-10" />
                         )}
 
                         {assignment.latestRecitation.feedback && (
